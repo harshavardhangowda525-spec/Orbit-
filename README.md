@@ -17,6 +17,10 @@ packages/shared   Types, plans, business-type templates, Pulse logic, i18n (en, 
 infra/db          PostgreSQL roles and database setup
 ```
 
+## Deploy (Supabase + Render)
+
+Step-by-step clicks: **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short: run `infra/db/supabase-setup.sql` once in Supabase, then Render → New → Blueprint with this repo (`render.yaml` creates the web app, the API and Redis). Sign-in uses Supabase Auth (`AUTH_PROVIDER=supabase`); local development keeps Orbit's own sign-in.
+
 ## Setup
 
 Requirements: Node 20+, PostgreSQL 16 with `pgvector`, Redis (live updates and background jobs).
@@ -90,13 +94,16 @@ npm run test:e2e
 | `OTP_DEV_ECHO` | Returns the OTP in the response (ignored in production). |
 | `PLATFORM_ADMIN_PHONES` | E.164 numbers that become platform admins. |
 | `THROTTLE_DISABLED` | Test/e2e only. |
+| `AUTH_PROVIDER`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_EMAILS` | `supabase` = sign-in by Supabase Auth (tokens checked against the project's signing keys; the secret only for legacy projects). Default `orbit` (local). |
+| `DATABASE_SSL`, `DATABASE_CA_CERT` | `require` for hosted Postgres such as Supabase; `verify` also checks the certificate. |
+| `SEED_DEMO` | `true` adds the two demo businesses on first start (hosting). |
 | `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_EFFORT` | Aria's model. `claude` (default, Opus 5.5 at low effort) or `fake` (offline demo). |
 | `JOBS_MODE`, `JOBS_ENABLED`, `REALTIME_MODE` | Background jobs (BullMQ) and live updates (Redis pub/sub). |
 | `POWERS_ENCRYPTION_KEY` | 32-byte base64 key encrypting Power tokens. Required in production. |
 | `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `WEB_BASE_URL` | Google Calendar and Gmail Powers (OAuth). |
 | `DEV_DELIVER` | Development only: log messages to customers with no connected channel. |
 
-**Web (`apps/web/.env.local`)**
+**Web** — local: `apps/web/.env.local` (`NEXT_PUBLIC_*`); hosted: runtime variables `ORBIT_API_URL`, `API_INTERNAL_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `AUTH_GOOGLE` (served to the browser by `/runtime-config`, so one Docker image works anywhere).
 
 | Variable | Purpose |
 |---|---|

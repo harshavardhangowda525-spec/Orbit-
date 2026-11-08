@@ -56,3 +56,32 @@ export const runtime = {
   /** Development: messages to channels that are not connected are recorded as sent (not delivered). */
   devDeliver: process.env.DEV_DELIVER === 'true',
 };
+
+/** TLS to Postgres: "off" (local), "require" (encrypted; hosted pools such as Supabase), "verify" (also checks DATABASE_CA_CERT). */
+export function pgSsl(): false | { rejectUnauthorized: boolean; ca?: string } {
+  const mode = process.env.DATABASE_SSL ?? 'off';
+  if (mode === 'require') return { rejectUnauthorized: false };
+  if (mode === 'verify') return { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT?.replace(/\\n/g, '\n') };
+  return false;
+}
+
+/** Sign-in: "orbit" (Orbit's own phone codes + Google) or "supabase" (Supabase Auth tokens). Read live so tests can switch. */
+export const auth = {
+  get provider() {
+    return (process.env.AUTH_PROVIDER ?? 'orbit') as 'orbit' | 'supabase';
+  },
+  get supabaseUrl() {
+    return (process.env.SUPABASE_URL ?? '').replace(/\/$/, '');
+  },
+  /** Where the signing keys are published (defaults to the project's JWKS URL). */
+  get supabaseJwksUrl() {
+    return process.env.SUPABASE_JWKS_URL || `${(process.env.SUPABASE_URL ?? '').replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`;
+  },
+  /** Only for projects still on the legacy shared JWT secret (HS256). */
+  get supabaseJwtSecret() {
+    return process.env.SUPABASE_JWT_SECRET ?? '';
+  },
+  get adminEmails() {
+    return (process.env.PLATFORM_ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  },
+};

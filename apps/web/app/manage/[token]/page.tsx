@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { API_URL } from '@/lib/api';
+import { apiUrl } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 
 /** Customer's own booking: see it, move it or cancel it within the business's policy. */
@@ -15,7 +15,7 @@ export default function ManageBooking() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const call = useCallback(async (path: string, body?: object) => {
-    const res = await fetch(`${API_URL}/public/manage/${encodeURIComponent(token)}${path}`, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+    const res = await fetch(`${apiUrl()}/public/manage/${encodeURIComponent(token)}${path}`, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d?.error?.message ?? t('chat.error'));
     return d;

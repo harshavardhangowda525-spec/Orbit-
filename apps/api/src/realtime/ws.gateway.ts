@@ -1,11 +1,10 @@
 import type { Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { JwtService } from '@nestjs/jwt';
 import type { INestApplication } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { RealtimeService } from './realtime.service';
-import type { JwtPayload } from '../auth/types';
+import { JwtAuthGuard } from '../auth/guards';
 import { logger } from '../logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,7 +17,7 @@ export const hashToken = (t: string) => createHash('sha256').update(t).digest('h
  * Access is checked exactly like the REST API (membership / visitor token).
  */
 export function attachWebSockets(app: INestApplication, server: Server) {
-  const jwt = app.get(JwtService);
+  const guard = app.get(JwtAuthGuard);
   const db = app.get(DbService);
   const realtime = app.get(RealtimeService);
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
@@ -29,14 +28,16 @@ export function attachWebSockets(app: INestApplication, server: Server) {
     let channel: string | null = null;
     try {
       if (q.get('token') && UUID_RE.test(q.get('business') ?? '')) {
-        const p = jwt.verify<JwtPayload>(q.get('token')!);
+        const p = await guard.resolve(q.get('token')!);
         const businessId = q.get('business')!;
-        const ok = p.imp
-          ? p.imp.businessId === businessId
+        const ok = !p
+          ? false
+          : p.impersonation
+          ? p.impersonation.businessId === businessId
           : !!(await db.one(
               `SELECT 1 FROM memberships m JOIN businesses b ON b.id = m.business_id
                WHERE m.user_id = $1 AND m.business_id = $2 AND m.status = 'active' AND b.status <> 'suspended'`,
-              [p.sub, businessId],
+              [p.id, businessId],
             ));
         if (ok) channel = `biz:${businessId}`;
       } else if (q.get('visitor') && UUID_RE.test(q.get('conversation') ?? '') && /^[a-z0-9-]{1,64}$/.test(q.get('slug') ?? '')) {

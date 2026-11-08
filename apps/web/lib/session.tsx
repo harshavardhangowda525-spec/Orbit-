@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, session } from './api';
+import { getSupabase } from './supabase';
 
 export interface MeBusiness {
   id: string;
@@ -60,7 +61,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh();
+    const sb = getSupabase();
+    if (!sb) {
+      refresh();
+      return;
+    }
+    // Supabase Auth: mirror the access token for the API and live updates; refresh on every sign-in change.
+    sb.auth.getSession().then(({ data }) => {
+      session.setToken(data.session?.access_token ?? null);
+      refresh();
+    });
+    const { data: sub } = sb.auth.onAuthStateChange((event, s) => {
+      session.setToken(s?.access_token ?? null);
+      if (event !== 'TOKEN_REFRESHED') refresh();
+    });
+    return () => sub.subscription.unsubscribe();
   }, [refresh]);
 
   const value: SessionCtx = {
@@ -73,6 +88,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return refresh();
     },
     signOut: () => {
+      getSupabase()?.auth.signOut().catch(() => undefined);
       session.clear();
       setMe(null);
       setBusinessId(null);

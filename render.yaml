@@ -1,0 +1,76 @@
+# Render Blueprint for Orbit: Dashboard -> New -> Blueprint -> pick this repo.
+# The database and sign-in are on Supabase; see docs/DEPLOY.md for every click.
+services:
+  # Redis-compatible store for live updates and background jobs.
+  # Free plan keeps data in memory only: scheduled reminders are lost if it restarts.
+  - type: keyvalue
+    name: orbit-redis
+    plan: free
+    region: singapore
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    name: orbit-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: orbit-redis
+          property: connectionString
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_ADMIN_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: require
+      - key: AUTH_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: POWERS_ENCRYPTION_KEY
+        generateValue: true
+      - key: WEB_ORIGIN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: WEB_BASE_URL
+        sync: false
+      - key: PLATFORM_ADMIN_PHONES
+        sync: false
+      - key: AI_PROVIDER
+        value: fake
+      - key: SEED_DEMO
+        value: "true"
+      - key: OTP_DEV_ECHO
+        value: "false"
+
+  - type: web
+    name: orbit-web
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /login
+    envVars:
+      - key: ORBIT_API_URL
+        sync: false
+      - key: API_INTERNAL_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false

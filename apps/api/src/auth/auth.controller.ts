@@ -3,6 +3,12 @@ import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import { SUPPORTED_LANGUAGE_CODES } from '@orbit/shared';
 import { ZodPipe } from '../common/zod.pipe';
+import { auth } from '../config';
+import { notFound } from '../common/errors';
+
+const ownSignInOnly = () => {
+  if (auth.provider === 'supabase') throw notFound('Sign-in is handled by the Orbit app.');
+};
 import { AuthService } from './auth.service';
 import { ClientIp, CurrentUser, Public } from './guards';
 import type { AuthUser } from './types';
@@ -23,6 +29,7 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('otp/request')
   requestOtp(@Body(new ZodPipe(OtpRequest)) body: z.infer<typeof OtpRequest>) {
+    ownSignInOnly();
     return this.auth.requestOtp(body.phone);
   }
 
@@ -30,6 +37,7 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('otp/verify')
   verifyOtp(@Body(new ZodPipe(OtpVerify)) body: z.infer<typeof OtpVerify>, @ClientIp() ip: string) {
+    ownSignInOnly();
     return this.auth.verifyOtp(body.phone, body.code, ip);
   }
 
@@ -37,6 +45,7 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('google')
   google(@Body(new ZodPipe(GoogleBody)) body: z.infer<typeof GoogleBody>, @ClientIp() ip: string) {
+    ownSignInOnly();
     return this.auth.signInWithGoogle(body.idToken, ip);
   }
 

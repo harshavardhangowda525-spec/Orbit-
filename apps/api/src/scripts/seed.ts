@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { DEFAULT_PLANS, TEMPLATES, localParts, type BusinessType } from '@orbit/shared';
-import { config } from '../config';
+import { config, pgSsl } from '../config';
 import { Tx } from '../db/db.service';
 import { applyTemplate } from '../onboarding/onboarding.service';
 import { migrate } from './migrate';
@@ -222,7 +222,7 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
 
 export async function seed(url = config.databaseMigrationUrl) {
   await migrate(url, true);
-  const client = new Client({ connectionString: url });
+  const client = new Client({ connectionString: url, ssl: pgSsl() });
   await client.connect();
   const tx = new Tx(client as any);
   try {

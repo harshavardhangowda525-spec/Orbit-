@@ -27,6 +27,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={jakarta.variable}>
+      <head>
+        {/* Public runtime settings (API address, Supabase project); tiny and cached. */}
+        <script src="/runtime-config" />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>

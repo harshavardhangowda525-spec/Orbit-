@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
-import { config } from '../config';
+import { config, pgSsl } from '../config';
 import { Tx } from '../db/db.service';
 import { seedPlatform } from './platform-seed';
 
 /** Applies migrations/*.sql in order, once each, then seeds base plans and templates. */
 export async function migrate(url = config.databaseMigrationUrl, quiet = false) {
-  const client = new Client({ connectionString: url });
+  const client = new Client({ connectionString: url, ssl: pgSsl() });
   await client.connect();
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);

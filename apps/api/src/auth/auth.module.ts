@@ -5,7 +5,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SMS_SENDER, smsSenderFactory } from './sms';
 import { GOOGLE_VERIFIER, GoogleIdTokenVerifier } from './google';
-import { AdminGuard, TenantGuard } from './guards';
+import { AdminGuard, JwtAuthGuard, TenantGuard } from './guards';
+import { SupabaseVerifier } from './supabase';
 
 @Global()
 @Module({
@@ -15,9 +16,11 @@ import { AdminGuard, TenantGuard } from './guards';
     AuthService,
     TenantGuard,
     AdminGuard,
+    JwtAuthGuard,
+    SupabaseVerifier,
     { provide: SMS_SENDER, useFactory: smsSenderFactory },
     { provide: GOOGLE_VERIFIER, useClass: GoogleIdTokenVerifier },
   ],
-  exports: [AuthService, TenantGuard, AdminGuard],
+  exports: [AuthService, TenantGuard, AdminGuard, JwtAuthGuard, SupabaseVerifier],
 })
 export class AuthModule {}

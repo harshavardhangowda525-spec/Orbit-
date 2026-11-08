@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { translate } from '@orbit/shared';
-import { API_URL } from '@/lib/api';
+import { apiUrl } from '@/lib/api';
 import { useLive } from '@/lib/live';
 
 interface Msg { id: string; from: 'you' | 'aria' | 'team'; body: string; at: string }
@@ -21,7 +21,7 @@ export function ChatPanel({ slug, businessName, lang, openOnLoad, embed = false 
   const key = `orbit.chat.${slug}`;
 
   const call = useCallback(async (path: string, init: RequestInit & { token?: string } = {}) => {
-    const res = await fetch(`${API_URL}/public/businesses/${slug}/chat${path}`, {
+    const res = await fetch(`${apiUrl()}/public/businesses/${slug}/chat${path}`, {
       ...init,
       headers: { 'content-type': 'application/json', ...(init.token ? { 'x-visitor-token': init.token } : {}) },
     });

@@ -4,6 +4,9 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import type { Role } from '@orbit/shared';
 import { DbService } from '../db/db.service';
+import { SupabaseVerifier } from './supabase';
+import { AuthService } from './auth.service';
+import { auth } from '../config';
 import { AppError, forbidden } from '../common/errors';
 import { currentContext } from '../context';
 import type { JwtPayload, Tenant } from './types';
@@ -18,26 +21,56 @@ export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Global guard: every route requires a valid sign-in token unless marked @Public(). */
+/**
+ * Global guard: every route requires a valid sign-in token unless marked @Public().
+ * Accepts Orbit's own tokens (local sign-in, admin impersonation) and, when
+ * AUTH_PROVIDER=supabase, Supabase Auth access tokens for this project.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly jwt: JwtService) {}
+  private cache = new Map<string, { userId: string; at: number }>();
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly jwt: JwtService,
+    private readonly supabase: SupabaseVerifier,
+    private readonly authService: AuthService,
+  ) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()]);
     if (isPublic) return true;
     const req = ctx.switchToHttp().getRequest<Request>();
     const header = req.headers.authorization ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) throw new AppError(401, 'unauthorized', 'Please sign in.');
+    const user = await this.resolve(token);
+    if (!user) throw new AppError(401, 'unauthorized', 'Please sign in again.');
+    req.user = user;
+    const c = currentContext();
+    if (c) c.userId = user.id;
+    return true;
+  }
+
+  /** Token -> user, shared with the WebSocket gateway. */
+  async resolve(token: string): Promise<{ id: string; impersonation?: { adminId: string; businessId: string } } | null> {
+    if (auth.provider === 'supabase' && this.supabase.looksLikeSupabase(token)) {
+      try {
+        const claims = await this.supabase.verify(token);
+        const hit = this.cache.get(claims.sub);
+        if (hit && Date.now() - hit.at < 10 * 60_000) return { id: hit.userId };
+        const userId = await this.authService.userForSupabase(claims);
+        if (this.cache.size > 5000) this.cache.clear();
+        this.cache.set(claims.sub, { userId, at: Date.now() });
+        return { id: userId };
+      } catch {
+        return null;
+      }
+    }
     try {
       const p = this.jwt.verify<JwtPayload>(token);
-      req.user = { id: p.sub, impersonation: p.imp };
-      const c = currentContext();
-      if (c) c.userId = p.sub;
-      return true;
+      return { id: p.sub, impersonation: p.imp };
     } catch {
-      throw new AppError(401, 'unauthorized', 'Please sign in again.');
+      return null;
     }
   }
 }

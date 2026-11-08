@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { translate, formatMoney } from '@orbit/shared';
-import { API_URL } from '@/lib/api';
+import { apiUrl } from '@/lib/api';
 
 interface Service { id: string; name: string; durationMin: number; price: number | null }
 
@@ -14,7 +14,7 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
   const [live, setLive] = useState<Service[] | null>(null);
   useEffect(() => {
     if (!open || live) return;
-    fetch(`${API_URL}/public/businesses/${slug}`).then((r) => r.json()).then((b) => Array.isArray(b?.services) && setLive(b.services)).catch(() => undefined);
+    fetch(`${apiUrl()}/public/businesses/${slug}`).then((r) => r.json()).then((b) => Array.isArray(b?.services) && setLive(b.services)).catch(() => undefined);
   }, [open, live, slug]);
   const bookable = (live ?? services).filter((s) => s.durationMin > 0);
   const [svc, setSvc] = useState<Service | null>(null);
@@ -35,7 +35,7 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
 
   useEffect(() => {
     if (!svc) return;
-    fetch(`${API_URL}/public/businesses/${slug}/staff?serviceId=${svc.id}`).then((r) => r.json()).then((s) => {
+    fetch(`${apiUrl()}/public/businesses/${slug}/staff?serviceId=${svc.id}`).then((r) => r.json()).then((s) => {
       setStaff(s);
       if (s.length <= 1) setStaffId(null);
     });
@@ -44,7 +44,7 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
     if (!svc || staffId === undefined) return;
     setSlots(null);
     const q = new URLSearchParams({ serviceId: svc.id, days: '7', ...(staffId ? { staffId } : {}) });
-    fetch(`${API_URL}/public/businesses/${slug}/slots?${q}`)
+    fetch(`${apiUrl()}/public/businesses/${slug}/slots?${q}`)
       .then(async (r) => {
         const s = await r.json().catch(() => null);
         if (!r.ok || !Array.isArray(s)) {
@@ -63,7 +63,7 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
     if (!svc || !slot) return;
     setBusy(true);
     setError(null);
-    const res = await fetch(`${API_URL}/public/businesses/${slug}/bookings`, {
+    const res = await fetch(`${apiUrl()}/public/businesses/${slug}/bookings`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ serviceId: svc.id, staffId: slot.staffId, start: slot.start, name, phone }),

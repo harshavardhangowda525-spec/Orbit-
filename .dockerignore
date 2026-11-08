@@ -1,0 +1,10 @@
+**/node_modules
+**/.next
+**/dist
+**/test-results
+**/playwright-report
+**/.env
+**/.env.local
+.git
+dump.rdb
+*.log

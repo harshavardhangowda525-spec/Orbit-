@@ -53,7 +53,7 @@ class HealthController {
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useExisting: JwtAuthGuard },
   ],
 })
 export class AppModule {}

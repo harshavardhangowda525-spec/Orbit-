@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { API_URL, session } from './api';
+import { apiUrl, session } from './api';
 
 export interface LiveEvent {
   type: string;
@@ -9,7 +9,9 @@ export interface LiveEvent {
 }
 
 function wsUrl(query: string) {
-  return `${API_URL.replace(/^http/, 'ws')}/ws?${query}`;
+  // API_URL may be relative ("/api") when the API sits behind the same address as the web app.
+  if (apiUrl().startsWith('/')) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${apiUrl()}/ws?${query}`;
+  return `${apiUrl().replace(/^http/, 'ws')}/ws?${query}`;
 }
 
 /**

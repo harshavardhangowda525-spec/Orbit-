@@ -483,6 +483,14 @@ for c,(a,b,d) in {'booking_page':('booking page','बुकिंग पेज',
 k('activity.vox.calling','{{agent}} is calling {{count}} members about renewals','{{agent}} रिन्यूअल के लिए {{count}} मेंबर्स को कॉल कर रहा है','{{agent}} ನವೀಕರಣಕ್ಕಾಗಿ {{count}} ಸದಸ್ಯರಿಗೆ ಕರೆ ಮಾಡುತ್ತಿದೆ')
 k('channel.google_business_profile','Google reviews','Google रिव्यू','Google ವಿಮರ್ಶೆಗಳು')
 
+
+# ---------- Supabase sign-in ----------
+k('login.google','Continue with Google','Google से जारी रखें','Google ಮೂಲಕ ಮುಂದುವರಿಯಿರಿ')
+k('login.google_failed','Google sign-in is not available right now. Please use your phone number.','Google साइन-इन अभी उपलब्ध नहीं है। कृपया अपना फ़ोन नंबर इस्तेमाल करें।','Google ಸೈನ್-ಇನ್ ಈಗ ಲಭ್ಯವಿಲ್ಲ. ದಯವಿಟ್ಟು ನಿಮ್ಮ ಫೋನ್ ಸಂಖ್ಯೆ ಬಳಸಿ.')
+k('login.wait_minute','Please wait a minute before asking for another code.','दूसरा कोड माँगने से पहले कृपया एक मिनट रुकें।','ಇನ್ನೊಂದು ಕೋಡ್ ಕೇಳುವ ಮೊದಲು ದಯವಿಟ್ಟು ಒಂದು ನಿಮಿಷ ಕಾಯಿರಿ.')
+k('login.code_failed','We could not send a code to that number. Please check it and try again.','हम उस नंबर पर कोड नहीं भेज पाए। कृपया नंबर जाँचकर फिर कोशिश करें।','ಆ ಸಂಖ್ಯೆಗೆ ಕೋಡ್ ಕಳುಹಿಸಲು ಆಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.')
+k('login.code_wrong','That code is not right or has expired. Please try again.','यह कोड सही नहीं है या समाप्त हो गया है। कृपया फिर कोशिश करें।','ಈ ಕೋಡ್ ಸರಿಯಿಲ್ಲ ಅಥವಾ ಅವಧಿ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.')
+
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}
   json.dump(d, open(f'{out}/{lang}.json','w'), ensure_ascii=False, indent=1)

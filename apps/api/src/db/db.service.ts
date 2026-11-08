@@ -1,6 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
-import { config } from '../config';
+import { config, pgSsl } from '../config';
 import { currentContext } from '../context';
 
 /** A transaction handle. All queries run on the same connection. */
@@ -32,8 +32,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 @Injectable()
 export class DbService implements OnModuleDestroy {
-  readonly app = new Pool({ connectionString: config.databaseUrl, max: 10 });
-  readonly admin = new Pool({ connectionString: config.databaseAdminUrl, max: 3 });
+  readonly app = new Pool({ connectionString: config.databaseUrl, max: 10, ssl: pgSsl() });
+  readonly admin = new Pool({ connectionString: config.databaseAdminUrl, max: 3, ssl: pgSsl() });
 
   async onModuleDestroy() {
     await Promise.all([this.app.end(), this.admin.end()]);

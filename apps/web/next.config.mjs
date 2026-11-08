@@ -13,6 +13,11 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   transpilePackages: ['@orbit/shared'],
+  // Preview/hosting behind one address: /api/* is forwarded to the API server.
+  async rewrites() {
+    const target = process.env.API_PROXY_TARGET;
+    return target ? [{ source: '/api/:path*', destination: `${target}/:path*` }] : [];
+  },
   async headers() {
     return [
       {

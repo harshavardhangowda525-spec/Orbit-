@@ -11,8 +11,8 @@ let warned = false;
 function key(): Buffer {
   if (runtime.powersKey) {
     const k = Buffer.from(runtime.powersKey, 'base64');
-    if (k.length !== 32) throw new Error('POWERS_ENCRYPTION_KEY must be 32 bytes, base64 encoded');
-    return k;
+    // A 32-byte base64 key is used as-is; any other secret string (e.g. one a host generates) is hashed to 32 bytes.
+    return k.length === 32 ? k : createHash('sha256').update(runtime.powersKey).digest();
   }
   if (config.env === 'production') throw new Error('POWERS_ENCRYPTION_KEY is required in production');
   if (!warned && config.env !== 'test') {

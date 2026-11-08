@@ -1,6 +1,12 @@
 'use client';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+import { publicEnv } from './env';
+import { getSupabase, supabaseToken } from './supabase';
+
+/** API address: runtime setting on hosted deployments, localhost in development. */
+export function apiUrl(): string {
+  return publicEnv('API_URL') || 'http://localhost:4000';
+}
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -41,19 +47,24 @@ export const session = {
 /** Call the Orbit API. Errors come back as ApiError with a plain-language message. */
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
+  // With Supabase Auth, always send a fresh access token (supabase-js refreshes it).
+  if (getSupabase()) {
+    const fresh = await supabaseToken();
+    if (fresh && fresh !== session.token()) session.setToken(fresh);
+  }
   const token = session.token();
   if (token) headers.authorization = `Bearer ${token}`;
   const biz = session.businessId();
   if (opts.business !== false && biz) headers['x-business-id'] = biz;
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+    res = await fetch(`${apiUrl()}${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   } catch {
     throw new ApiError(0, 'offline', 'No internet connection. Please check your network and try again.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401) session.setToken(null);
+    if (res.status === 401 && !getSupabase()) session.setToken(null);
     throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.');
   }
   return data as T;

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { toE164 } from '@orbit/shared';
-import { config } from '../config';
+import { auth, config } from '../config';
 import { DbService } from '../db/db.service';
 import { AppError, badRequest } from '../common/errors';
 import { AuditService } from '../audit/audit.service';
@@ -103,6 +103,38 @@ export class AuthService {
     }
     await this.audit.write({ actorId: user.id, action: 'auth.sign_in', entity: 'user', entityId: user.id, after: { method: 'google' }, ip });
     return { token: this.issue({ sub: user.id }), user: publicUser(user), isNew };
+  }
+
+  /**
+   * The Orbit user for a Supabase Auth user. Links by Supabase id, then by phone or
+   * email (so people who already exist, e.g. seeded owners, keep their businesses),
+   * otherwise creates the user.
+   */
+  async userForSupabase(c: { sub: string; email: string | null; phone: string | null; name: string | null }): Promise<string> {
+    const linked = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE supabase_uid = $1`, [c.sub]);
+    if (linked) return linked.id;
+    const phone = c.phone ? toE164(c.phone.startsWith('+') ? c.phone : `+${c.phone}`) : null;
+    const isAdmin = (!!phone && config.platformAdminPhones.includes(phone)) || (!!c.email && auth.adminEmails.includes(c.email));
+    const existing = await this.db.one<{ id: string }>(
+      `SELECT id FROM users WHERE supabase_uid IS NULL AND (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND email = $2)) ORDER BY (phone = $1) DESC NULLS LAST LIMIT 1`,
+      [phone, c.email],
+    );
+    const user = existing
+      ? await this.db.one(
+          `UPDATE users SET supabase_uid = $2, phone = COALESCE(phone, $3), email = COALESCE(email, $4), name = COALESCE(name, $5),
+             is_platform_admin = is_platform_admin OR $6, last_login_at = now(),
+             auth_providers = CASE WHEN auth_providers @> '[{"provider":"supabase"}]' THEN auth_providers ELSE auth_providers || '[{"provider":"supabase"}]' END
+           WHERE id = $1 RETURNING id`,
+          [existing.id, c.sub, phone, c.email, c.name, isAdmin],
+        )
+      : await this.db.one(
+          `INSERT INTO users (supabase_uid, phone, email, name, is_platform_admin, auth_providers, last_login_at)
+           VALUES ($1, $2, $3, $4, $5, '[{"provider":"supabase"}]', now())
+           ON CONFLICT (supabase_uid) DO UPDATE SET last_login_at = now() RETURNING id`,
+          [c.sub, phone, c.email, c.name, isAdmin],
+        );
+    await this.audit.write({ actorId: user!.id, action: 'auth.sign_in', entity: 'user', entityId: user!.id, after: { method: 'supabase', linked: !!existing } });
+    return user!.id;
   }
 
   issue(payload: JwtPayload, expiresIn: string | number = '30d') {
