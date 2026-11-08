@@ -9,7 +9,7 @@ import { migrate } from './migrate';
  * Sample data: two businesses of different types with a realistic day, so
  * The Bridge, Pulse and the isolation tests have something to show.
  *   Admin:            +91 98000 00000
- *   Glow Salon owner: +91 98000 00001  (Base plan)
+ *   Glow Studio owner (Meera): +91 98000 00001  (Base plan)
  *   IronCore Gym:     +91 98000 00002  (Business plan)
  * Re-running the seed replaces these two businesses.
  */
@@ -41,8 +41,8 @@ interface SampleBusiness {
 }
 
 const SALON: SampleBusiness = {
-  slug: 'glow-salon',
-  name: 'Glow Salon',
+  slug: 'glow-studio',
+  name: 'Glow Studio',
   type: 'salon',
   plan: 'base',
   ownerPhone: '+919800000001',
@@ -92,7 +92,8 @@ async function upsertUser(tx: Tx, phone: string, name: string, admin = false) {
 async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
   const owner = await upsertUser(tx, s.ownerPhone, s.ownerName);
   const plan = await tx.one(`SELECT id, features FROM plans WHERE code = $1`, [s.plan]);
-  await tx.q(`DELETE FROM businesses WHERE slug = $1`, [s.slug]);
+  // Also remove the sample's earlier name (Glow Salon -> Glow Studio) so re-seeding leaves one copy.
+  await tx.q(`DELETE FROM businesses WHERE slug = ANY($1)`, [[s.slug, ...(s.slug === 'glow-studio' ? ['glow-salon'] : [])]]);
   const biz = await tx.one<{ id: string }>(
     `INSERT INTO businesses (name, slug, type, timezone, default_language, supported_languages, plan_id, status, onboarding_step, launched_at, created_by, created_at)
      VALUES ($1, $2, $3, $4, 'en', ARRAY['en','hi','kn'], $5, 'live', 7, now() - interval '40 days', $6, now() - interval '40 days') RETURNING id`,
@@ -173,33 +174,39 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
     customers[6].id, s.type === 'gym' ? 'Personal training' : 'Hair colour', minsAgo(90), customers[7].id, at(-1, 18),
   ]);
 
-  const feed = (agent: string, type: string, key: string, params: Record<string, unknown>, m: number, value = 0, minutes = 0) =>
-    tx.q(`INSERT INTO feed_events (agent_key, event_type, sentence, value_amount, minutes_saved, at) VALUES ($1, $2, $3, $4, $5, $6)`, [
-      agent, type, JSON.stringify({ key, params }), value, minutes, minsAgo(m),
+  const feed = (agent: string, type: string, key: string, params: Record<string, unknown>, m: number, value = 0, minutes = 0, channel: string | null = null) =>
+    tx.q(`INSERT INTO feed_events (agent_key, event_type, sentence, value_amount, minutes_saved, at, channel) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
+      agent, type, JSON.stringify({ key, params }), value, minutes, minsAgo(m), channel,
     ]);
+  // Live Crew activity (drives the agent pings and the ticker on The Bridge).
+  const activity = (agent: string, key: string, params: Record<string, unknown>) =>
+    tx.q(`INSERT INTO tasks (agent_key, created_by_kind, goal, status, activity, started_at) VALUES ($1, 'system', $2, 'running', $3, now())`, [agent, key, JSON.stringify({ key, params })]);
   const card = (agent: string, type: string, key: string, params: Record<string, unknown>, options: unknown[], context: unknown, m: number, def = 'no') =>
     tx.q(`INSERT INTO approval_cards (agent_key, type, title, options, context, default_option, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '1 day')`, [
       agent, type, JSON.stringify({ key, params }), JSON.stringify(options), JSON.stringify(context), def, minsAgo(m),
     ]);
 
   if (s.type === 'salon') {
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Anil', service: 'a haircut', time: `~t:${at(0, 16).toISOString()}`, channel: '@channel.whatsapp' }, 8, 300, 6);
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Sneha', service: 'a facial', time: `~t:${at(0, 17).toISOString()}`, channel: '@channel.website_chat' }, 20, 1200, 6);
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Kiran', service: 'a beard trim', time: `~t:${at(0, 18).toISOString()}`, channel: '@channel.whatsapp' }, 26, 150, 6);
-    await feed('aria', 'handover', 'feed.aria.handover', { customer: 'Priya' }, 30);
-    await feed('nudge', 'reminder_sent', 'feed.nudge.reminders', { count: 7 }, 75, 0, 21);
-    await feed('ledger', 'payment_received', 'feed.ledger.collected', { amount: '~m:INR:2400', count: 3 }, 120, 2400, 15);
-    await feed('aria', 'question_answered', 'feed.aria.answered', { customer: 'Divya', topic: 'prices' }, 150, 0, 4);
-    await feed('nudge', 'review_request_sent', 'feed.nudge.review_request', { customer: 'Lakshmi' }, 200, 0, 3);
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Anil', service: 'a haircut', time: `~t:${at(0, 16).toISOString()}`, channel: '@channel.whatsapp' }, 8, 300, 6, 'whatsapp');
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Sneha', service: 'a facial', time: `~t:${at(0, 17).toISOString()}`, channel: '@channel.website_chat' }, 20, 1200, 6, 'website_chat');
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Kiran', service: 'a beard trim', time: `~t:${at(0, 18).toISOString()}`, channel: '@channel.whatsapp' }, 26, 150, 6, 'whatsapp');
+    await feed('aria', 'handover', 'feed.aria.handover', { customer: 'Priya' }, 30, 0, 0, 'whatsapp');
+    await feed('nudge', 'reminder_sent', 'feed.nudge.reminders', { count: 7 }, 75, 0, 21, 'whatsapp');
+    await feed('ledger', 'payment_received', 'feed.ledger.collected', { amount: '~m:INR:2400', count: 3 }, 120, 2400, 15, 'whatsapp');
+    await feed('aria', 'question_answered', 'feed.aria.answered', { customer: 'Divya', topic: 'prices' }, 150, 0, 4, 'instagram');
+    await feed('nudge', 'review_request_sent', 'feed.nudge.review_request', { customer: 'Lakshmi' }, 200, 0, 3, 'whatsapp');
+    await activity('aria', 'activity.aria.replying', { customer: 'Pooja', channel: '@channel.whatsapp' });
+    await activity('nudge', 'activity.nudge.sending', {});
     await tx.q(`INSERT INTO reviews (platform, author, rating, text, posted_at) VALUES ('google', 'Rahul', 2, 'Had to wait 30 minutes even with a booking.', now() - interval '3 hours'), ('google', 'Divya', 5, 'Anjali is the best! Lovely haircut.', now() - interval '6 days'), ('google', 'Arjun', 5, 'Clean, quick and friendly.', now() - interval '12 days')`);
     await card('aria', 'discount', 'card.discount', { customer: 'Priya', percent: 10 },
       [{ key: 'yes', label: 'card.option.yes', style: 'primary', outcome: 'approved' }, { key: 'no', label: 'card.option.no', style: 'secondary', outcome: 'rejected' }, { key: 'reply_myself', label: 'card.option.reply_myself', style: 'ghost', outcome: 'edited' }],
-      { conversation: 'Priya: "Can I get a discount if I book for my sister too?"' }, 13);
+      { channel: 'whatsapp', conversation: 'Priya: "Can I get a discount if I book for my sister too?"' }, 13);
     await card('nudge', 'review_reply', 'card.bad_review', { customer: 'Rahul' },
       [{ key: 'post', label: 'card.option.post', style: 'primary', outcome: 'approved' }, { key: 'edit', label: 'card.option.edit', style: 'secondary', outcome: 'edited' }],
-      { review: 'Had to wait 30 minutes even with a booking.', suggestedReply: 'Sorry about the wait, Rahul. That is not the experience we want for you. Your next visit has a 15-minute guarantee, and we would love to make it up to you.' }, 170);
+      { channel: 'google_business_profile', review: 'Had to wait 30 minutes even with a booking.', suggestedReply: 'Sorry about the wait, Rahul. That is not the experience we want for you. Your next visit has a 15-minute guarantee, and we would love to make it up to you.' }, 170);
   } else {
-    await feed('vox', 'calls_done', 'feed.vox.called_batch', { count: 6, renewed: 4 }, 40, 6000, 45);
+    await feed('vox', 'calls_done', 'feed.vox.called_batch', { count: 6, renewed: 4 }, 40, 6000, 45, 'phone');
+    await activity('vox', 'activity.vox.calling', { count: 3 });
     await feed('ledger', 'payment_received', 'feed.ledger.collected', { amount: '~m:INR:2400', count: 3 }, 65, 2400, 15);
     await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Neha', service: 'a free trial session', time: `~t:${at(0, 18).toISOString()}`, channel: '@channel.instagram' }, 90, 0, 6);
     await feed('aria', 'lead_captured', 'feed.aria.lead', { customer: 'Aditya', interest: 'Personal training' }, 90, 0, 5);
@@ -207,7 +214,7 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
     await feed('spark', 'draft_ready', 'feed.spark.drafted', { count: 214, occasion: 'Diwali' }, 240, 0, 60);
     await card('spark', 'campaign', 'card.campaign', { count: 214, occasion: 'Diwali' },
       [{ key: 'send', label: 'card.option.send', style: 'primary', outcome: 'approved' }, { key: 'edit', label: 'card.option.edit', style: 'secondary', outcome: 'edited' }],
-      { sample: 'Happy Diwali from IronCore Gym! Renew this week and get 20% off your next 3 months.', channels: ['whatsapp', 'instagram'] }, 240);
+      { sample: 'Happy Diwali from IronCore Gym! Renew this week and get 20% off your next 3 months.', channels: ['whatsapp', 'instagram'], audience: '214 customers · visited last year' }, 240);
   }
   await tx.q(`INSERT INTO usage_counters (period, ai_messages, tasks) VALUES (to_char(now(), 'YYYY-MM'), $1, $2)`, [s.type === 'gym' ? 420 : 610, 85]);
   return id;
@@ -237,7 +244,7 @@ export async function seed(url = config.databaseMigrationUrl) {
 
 if (require.main === module) {
   seed()
-    .then((r) => console.log(`Seeded Glow Salon (${r.salon}) and IronCore Gym (${r.gym}).\nSign in with +91 98000 00001 (salon), +91 98000 00002 (gym) or +91 98000 00000 (admin).`))
+    .then((r) => console.log(`Seeded Glow Studio (${r.salon}) and IronCore Gym (${r.gym}).\nSign in with +91 98000 00001 (salon), +91 98000 00002 (gym) or +91 98000 00000 (admin).`))
     .catch((e) => {
       console.error(e);
       process.exit(1);

@@ -12,4 +12,4 @@ export function slugify(name: string): string {
   return s || 'business';
 }
 
-export const RESERVED_SLUGS = new Set(['admin', 'api', 'app', 'login', 'bridge', 'onboarding', 'b', 'www', 'orbit', 'help', 'support', 'static']);
+export const RESERVED_SLUGS = new Set(['admin', 'api', 'app', 'login', 'bridge', 'onboarding', 'inbox', 'manage', 'b', 'www', 'orbit', 'help', 'support', 'static', 'widget', 'icons', 'ws']);

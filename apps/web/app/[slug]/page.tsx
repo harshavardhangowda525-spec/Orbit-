@@ -3,11 +3,13 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { WEEKDAYS, pickLanguage, translate, formatMoney, type WeeklyHours } from '@orbit/shared';
 import { ChatPanel } from './ChatPanel';
+import { BookingFlow } from './BookingFlow';
 
 const API = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 interface PublicBusiness {
   slug: string;
+  timezone: string;
   name: string;
   type: string;
   currency: string;
@@ -41,11 +43,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title: b.name, description: desc, openGraph: { title: b.name, description: desc, images: b.profile?.photos?.slice(0, 1) } };
 }
 
-export default async function PublicPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ chat?: string }> }) {
+export default async function PublicPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ chat?: string; embed?: string }> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const b = await load(slug);
   if (!b) notFound();
   const lang = await viewerLang(b);
+  if (sp.embed === '1') return <ChatPanel slug={slug} businessName={b.name} lang={lang} openOnLoad embed />;
   const t = (k: string, p: Record<string, string | number> = {}) => translate(lang, k, p);
   const p = b.profile;
   const wa = p?.whatsapp?.replace(/\D/g, '');
@@ -120,7 +124,8 @@ export default async function PublicPage({ params, searchParams }: { params: Pro
         )}
         {b.poweredByOrbit && <p className="small muted" style={{ textAlign: 'center', marginTop: 16 }}>{t('public.powered')}</p>}
         <div className="sticky-cta">
-          <ChatPanel businessName={b.name} lang={lang} openOnLoad={(await searchParams).chat === '1'} />
+          <BookingFlow slug={slug} services={b.services} currency={b.currency} timezone={b.timezone} lang={lang} businessName={b.name} />
+          <ChatPanel slug={slug} businessName={b.name} lang={lang} openOnLoad={sp.chat === '1'} />
           {p?.phone && <a className="btn" href={`tel:${p.phone}`} aria-label={t('public.call')}>📞</a>}
           {wa && <a className="btn" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" aria-label="WhatsApp">💬</a>}
         </div>

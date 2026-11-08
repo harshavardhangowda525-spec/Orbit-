@@ -1,50 +1,53 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import './bridge.css';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Sentence } from '@orbit/shared';
 import { api, ApiError, session } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
+import { useLive, ownerLiveQuery } from '@/lib/live';
+import { useIntroOnce, usePageVisible } from '@/lib/motion';
 import { LanguagePicker } from '@/components/LanguagePicker';
-import { Checklist } from '@/components/LiveLinks';
 import { CommandBar } from '@/components/CommandBar';
+import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
+import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
+import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
 import { CrewView, PeopleView, PowersView, DetailsView, ComingView } from '@/components/Views';
 
-export interface BridgeData {
-  business: { id: string; name: string; slug: string; timezone: string; currency: string; status: string };
-  mode: 'morning' | 'evening';
-  pulse: { score: number; mood: 'great' | 'good' | 'watch' | 'low'; sentence: Sentence; numbers: { moneyToday: number; bookingsToday: number; peopleWaiting: number } };
-  briefing: Sentence[];
-  needsYou: { id: string; agent: string; agentName: string; type: string; title: Sentence; context: Record<string, unknown>; options: { key: string; label: string; style: string }[] }[];
-  feed: { id: string; agent: string; type: string; at: string; sentence: Sentence; items: { id: string; sentence: Sentence; at: string }[] }[];
-  earnings: { total: number; minutesSaved: number; byAgent: { agent: string; name: string; value: number; minutes: number }[] };
-  crew: { agent: string; name: string; enabled: boolean }[];
-  suggestions: string[];
+import { VIEWS, type BridgeData, type View } from '@/lib/bridge-types';
+
+export default function BridgePage() {
+  return (
+    <Suspense fallback={<main className="br"><Skeleton /></main>}>
+      <Bridge />
+    </Suspense>
+  );
 }
 
-const VIEWS = ['bridge', 'crew', 'people', 'tomorrow', 'rewind', 'powers', 'details'] as const;
-type View = (typeof VIEWS)[number];
-
-export default function Bridge() {
-  const { t } = useI18n();
+function Bridge() {
+  const { t, lang } = useI18n();
   const { me, loading, business, signOut } = useSession();
   const router = useRouter();
+  const params = useSearchParams();
   const [data, setData] = useState<BridgeData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>('bridge');
-  const [checklist, setChecklist] = useState<{ key: string; done: boolean }[] | null>(null);
-  const [pull, setPull] = useState(0);
+  const [view, setView] = useState<View>((VIEWS as readonly string[]).includes(params.get('view') ?? '') ? (params.get('view') as View) : 'today');
+  const [agent, setAgent] = useState<string | null>(null);
+  const visible = usePageVisible();
+  const intro = useIntroOnce('orbit.bridge.intro', !!data);
   const touch = useRef<{ x: number; y: number } | null>(null);
+  const refetch = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const load = useCallback(async () => {
     try {
       setData(await api<BridgeData>('/bridge'));
       setError(null);
     } catch (e) {
-      setError((e as ApiError).message);
+      setError((e as ApiError).code === 'offline' ? t('bridge.offline') : t('bridge.error'));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (loading) return;
@@ -52,44 +55,64 @@ export default function Bridge() {
     if (!business && !me.impersonation) return router.replace('/onboarding');
     if (business?.status === 'onboarding') return router.replace('/onboarding');
     load();
-    api('/onboarding/state').then((s) => setChecklist(s.checklist)).catch(() => undefined);
-    // Live refresh (WebSockets arrive with the live inbox in Phase 2).
-    const id = setInterval(() => document.visibilityState === 'visible' && load(), 30_000);
-    return () => clearInterval(id);
   }, [loading, me, business, router, load]);
 
-  // Swipe left/right between views; pull down at the top to refresh.
-  const onTouchStart = (e: React.TouchEvent) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY });
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (!touch.current || window.scrollY > 0) return;
-    const dy = e.touches[0].clientY - touch.current.y;
-    if (dy > 0 && Math.abs(e.touches[0].clientX - touch.current.x) < 30) setPull(Math.min(dy, 90));
+  // Live updates: any event refreshes The Bridge (debounced); a slow poll covers missed sockets.
+  const liveQuery = useMemo(() => (me && (business || me.impersonation) ? ownerLiveQuery() : null), [me, business]);
+  useLive(liveQuery, () => {
+    clearTimeout(refetch.current);
+    refetch.current = setTimeout(load, 250);
+  });
+  useEffect(() => {
+    if (!visible) return;
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, [visible, load]);
+
+  const openEntity = (it: { entityType: string | null; entityId: string | null }) => {
+    if (it.entityType === 'conversation' && it.entityId) router.push(`/inbox/${it.entityId}`);
+    else if (it.entityType === 'booking') setView('details');
+    else if (it.entityType === 'lead' || it.entityType === 'customer') setView('people');
+    else if (it.entityType === 'task') setView('crew');
+    else if (it.entityType === 'power') setView('powers');
   };
+
+  const onTouchStart = (e: React.TouchEvent) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY });
   const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touch.current;
+    const s = touch.current;
     touch.current = null;
-    if (pull > 70) load();
-    setPull(0);
-    if (!start) return;
-    const dx = e.changedTouches[0].clientX - start.x;
-    const dy = e.changedTouches[0].clientY - start.y;
-    if (Math.abs(dx) > 90 && Math.abs(dy) < 50 && !(e.target as HTMLElement).closest('.cards, .views, input, textarea')) {
+    if (!s) return;
+    const dx = e.changedTouches[0].clientX - s.x;
+    const dy = e.changedTouches[0].clientY - s.y;
+    if (Math.abs(dx) > 90 && Math.abs(dy) < 50 && !(e.target as HTMLElement).closest('.decision, .switcher, input, textarea, .orbit')) {
       const i = VIEWS.indexOf(view) + (dx < 0 ? 1 : -1);
       if (i >= 0 && i < VIEWS.length) setView(VIEWS[i]);
     }
   };
 
+  const names = Object.fromEntries((data?.crew ?? []).map((c) => [c.agent, c.name]));
+  const dayName = data ? new Intl.DateTimeFormat(lang === 'en' ? 'en-IN' : `${lang}-IN`, { weekday: 'long', timeZone: data.business.timezone }).format(new Date(data.now)) : '';
+  const greetingKey = data ? `greet.${data.dayPart}` : 'greet.morning';
+  const switcher = (
+    <nav className="switcher" aria-label={t('bridge.views')}>
+      {VIEWS.map((v) => (
+        <button key={v} aria-current={view === v} onClick={() => setView(v)}>{t(`view.${v}`)}</button>
+      ))}
+    </nav>
+  );
+
   return (
-    <main className="page bridge" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-      <div className="ptr" style={{ height: pull }}>{pull > 70 ? t('bridge.release') : t('bridge.pull')}</div>
-      <div className="topbar">
-        <div className="name">{data?.business.name ?? business?.name ?? 'Orbit'}</div>
-        <div className="row">
-          <LanguagePicker compact />
-          {me?.user.isPlatformAdmin && !me.impersonation && <a className="chip" href="/admin">{t('bridge.admin')}</a>}
-          <button className="chip" onClick={signOut}>{t('bridge.sign_out')}</button>
-        </div>
-      </div>
+    <main className={`br ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <Header
+        dayName={dayName}
+        business={data?.business.name ?? business?.name ?? ''}
+        greeting={data ? t(greetingKey, { name: data.owner.firstName ?? '' }).replace(/,\s*$/, '') : ''}
+        switcher={switcher}
+        isAdmin={!!me?.user.isPlatformAdmin && !me.impersonation}
+        signOut={signOut}
+        ready={!!data}
+      />
+      <div className="br-switch-phone">{switcher}</div>
       {me?.impersonation && (
         <p className="note small row between">
           <span>{t('bridge.impersonating')}</span>
@@ -101,190 +124,145 @@ export default function Bridge() {
           }}>{t('bridge.stop_viewing')}</button>
         </p>
       )}
-      <nav className="views" aria-label={t('bridge.views')}>
-        {VIEWS.map((v) => (
-          <button key={v} className="chip" aria-current={view === v} onClick={() => setView(v)}>
-            {t(`view.${v}`)}
-          </button>
-        ))}
-      </nav>
+      {params.get('result') && view === 'powers' && <p className="note small">{t(`powers.result.${params.get('result')}`, { power: params.get('power') ? `@power.${params.get('power')}` : '' })}</p>}
 
-      {error && <p className="error" role="alert">{error}</p>}
-      {!data && !error && <p className="muted">{t('common.loading')}</p>}
+      {error && !data && (
+        <div className="card stack" role="alert">
+          <p>{error}</p>
+          <button className="btn primary" onClick={load}>{t('common.retry')}</button>
+        </div>
+      )}
+      {!data && !error && <Skeleton />}
 
-      {data && view === 'bridge' && <BridgeHome data={data} reload={load} checklist={checklist} />}
-      {data && view === 'crew' && <CrewView data={data} />}
+      {data && view === 'today' && (
+        <Today data={data} intro={intro} running={visible} names={names} dayName={dayName} reload={load} openEntity={openEntity}
+          onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} />
+      )}
+      {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} />}
       {view === 'people' && <PeopleView />}
       {view === 'powers' && <PowersView />}
       {view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}
-
-      {data && <CommandBar suggestions={data.suggestions} onDone={load} />}
+      {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} running={visible} /></div>}
     </main>
   );
 }
 
-function BridgeHome({ data, reload, checklist }: { data: BridgeData; reload: () => void; checklist: { key: string; done: boolean }[] | null }) {
-  const { t, ts, money } = useI18n();
-  const { pulse } = data;
-  const briefing = (
-    <section className="card" data-testid="briefing">
-      <h2>{data.mode === 'morning' ? t('bridge.morning') : t('bridge.evening')}</h2>
-      <ul className="stack" style={{ margin: 0, paddingLeft: 18, gap: 4 }}>
-        {data.briefing.map((s, i) => <li key={i}>{ts(s)}</li>)}
-      </ul>
+function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready }: { dayName: string; business: string; greeting: string; switcher: React.ReactNode; isAdmin: boolean; signOut: () => void; ready: boolean }) {
+  const { t, ts } = useI18n();
+  const [notes, setNotes] = useState<{ unread: number; items: { id: string; title: Sentence; link: string | null; at: string; readAt: string | null }[] } | null>(null);
+  const [open, setOpen] = useState(false);
+  const loadNotes = useCallback(() => api('/notifications').then(setNotes).catch(() => undefined), []);
+  useEffect(() => {
+    if (ready) loadNotes();
+  }, [ready, loadNotes]);
+  useLive(ready ? ownerLiveQuery() : null, (e) => e.type === 'notification.new' && loadNotes());
+  return (
+    <header className="br-head rise" style={{ ['--d' as any]: '0s', position: 'relative' }}>
+      <div className="logo" aria-hidden>
+        <div className="ring" />
+        <div className="core" />
+        <div className="spin"><i /></div>
+      </div>
+      <div className="who">
+        <div className="date">{dayName}{business ? ` · ${business}` : ''}</div>
+        <h1 data-testid="greeting">{greeting || ' '}</h1>
+      </div>
+      <div className="br-desktop-only">{switcher}</div>
+      <LanguagePicker compact />
+      <button className="bell" aria-label={t('bridge.notifications', { count: notes?.unread ?? 0 })} aria-expanded={open}
+        onClick={() => {
+          setOpen(!open);
+          if (!open && notes?.unread) api('/notifications/read', { body: {} }).then(loadNotes).catch(() => undefined);
+        }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M10 20a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        {!!notes?.unread && <span className="dot" data-testid="bell-dot" />}
+      </button>
+      {open && (
+        <div className="card notes" role="dialog" aria-label={t('bridge.notifications_title')}>
+          <div className="row between"><b>{t('bridge.notifications_title')}</b><button className="link-btn" onClick={signOut}>{t('bridge.sign_out')}</button></div>
+          {isAdmin && <a className="chip" href="/admin" style={{ marginTop: 8 }}>{t('bridge.admin')}</a>}
+          {!notes?.items.length && <p className="muted small">{t('bridge.no_notifications')}</p>}
+          {notes?.items.map((n) => (
+            <a key={n.id} href={n.link ?? '#'} className="list-item" style={{ color: 'inherit', textDecoration: 'none' }}>
+              <span className="grow small"><b style={{ fontWeight: n.readAt ? 600 : 800 }}>{ts(n.title)}</b><br /><span className="muted">{timeAgo(n.at, t)}</span></span>
+            </a>
+          ))}
+        </div>
+      )}
+    </header>
+  );
+}
+
+function Today({ data, intro, running, names, dayName, reload, openEntity, onAgent, onOpen }: {
+  data: BridgeData; intro: boolean; running: boolean; names: Record<string, string>; dayName: string; reload: () => void;
+  openEntity: (it: { entityType: string | null; entityId: string | null }) => void; onAgent: (a: string) => void; onOpen: (href: string) => void;
+}) {
+  const { t, ts } = useI18n();
+  const n = data.pulse.numbers;
+  const share = async () => {
+    const url = `${window.location.origin}/${data.business.slug}`;
+    try {
+      if (navigator.share) await navigator.share({ title: data.business.name, url });
+      else await navigator.clipboard.writeText(url);
+    } catch {}
+  };
+  const tiles = (cls: string) => <StatTiles className={cls} money={n.moneyToday} bookings={n.bookingsToday} needYou={data.needsYou.length} currency={data.business.currency} animate={intro} />;
+  const briefing = data.dayPart !== 'afternoon' && data.briefing.length > 0 && (
+    <section className="briefing rise" style={{ ['--d' as any]: '0.15s' }} data-testid="briefing">
+      <div className="label" style={{ color: 'var(--muted)' }}>{data.mode === 'morning' ? t('brief.title_morning') : t('brief.title_evening')}</div>
+      <ul>{data.briefing.map((s, i) => <li key={i}>{ts(s)}</li>)}</ul>
     </section>
   );
   return (
-    <>
-      {/* 1. PULSE */}
-      <section className="card" aria-label={t('zone.pulse')} data-testid="pulse">
-        <div className="pulse">
-          <div className={`ring ${pulse.mood}`} style={{ ['--score' as any]: pulse.score }} role="img" aria-label={t('pulse.score_label', { score: pulse.score })}>
-            <span>{pulse.score}</span>
+    <div className="br-grid">
+      <div className="br-col">
+        <section className="hero-card rise" style={{ ['--d' as any]: '0.08s' }} data-testid="pulse">
+          <div className="hero-top">
+            <span className="label">{t('hero.working')}</span>
+            <span className="live"><i />{t('hero.live')}</span>
           </div>
-          <div className="grow">
-            <div className="small muted">{t('zone.pulse')}</div>
-            <div className="pulse-sentence">{ts(pulse.sentence)}</div>
-          </div>
-        </div>
-        <div className="numbers">
-          <div className="num"><b>{money(pulse.numbers.moneyToday, data.business.currency)}</b><span>{t('pulse.label.money_today')}</span></div>
-          <div className="num"><b>{pulse.numbers.bookingsToday}</b><span>{t('pulse.label.bookings_today')}</span></div>
-          <div className="num"><b>{pulse.numbers.peopleWaiting}</b><span>{t('pulse.label.people_waiting')}</span></div>
-        </div>
-      </section>
-
-      {data.mode === 'morning' && <div style={{ marginTop: 12 }}>{briefing}</div>}
-
-      {/* 2. NEEDS YOU */}
-      <div className="zone-title">
-        <h2>{t('zone.needs_you')}</h2>
-        {data.needsYou.length > 0 && <span className="small muted">{t('needs.count', { count: data.needsYou.length })}</span>}
+          <OrbitSystem crew={data.crew} score={data.pulse.score} animate={intro} onAgent={onAgent} />
+          <p className="pulse-line" data-testid="pulse-sentence">{ts(data.pulse.sentence)}</p>
+          {tiles('hero-tiles')}
+          <Ticker
+            items={data.isNew ? [] : data.ticker}
+            running={running}
+            empty={
+              <>
+                <span className="txt">{t('hero.ready')}</span>
+                <button className="btn small share" onClick={share}>{t('hero.share')}</button>
+              </>
+            }
+          />
+        </section>
+        {tiles('tiles phone')}
       </div>
-      {data.needsYou.length === 0 ? (
-        <div className="card empty" data-testid="needs-empty">
-          <div className="big">✨</div>
-          <div>{t('needs.empty')}</div>
-        </div>
-      ) : (
-        <div className="cards" data-testid="needs-you">
-          {data.needsYou.map((c) => <NeedCard key={c.id} card={c} onDone={reload} />)}
-        </div>
-      )}
-
-      {data.mode === 'evening' && <div style={{ marginTop: 12 }}>{briefing}</div>}
-
-      {/* 3. ORBIT FEED */}
-      <div className="zone-title"><h2>{t('zone.feed')}</h2></div>
-      <section className="card" data-testid="feed">
-        {data.feed.length === 0 ? (
-          <p className="muted">{t('feed.empty')}</p>
-        ) : (
-          <ul className="feed">
-            {data.feed.map((g) => <FeedRow key={g.id} group={g} />)}
-          </ul>
-        )}
-      </section>
-
-      {/* ORBIT EARNINGS */}
-      <div className="zone-title"><h2>{t('zone.earnings')}</h2></div>
-      <section className="card" data-testid="earnings">
-        <div className="earn">
-          <div>
-            <b>{money(data.earnings.total, data.business.currency)}</b>
-            <div className="small muted">{t('earn.sub', { count: Math.round(data.earnings.minutesSaved / 6) / 10 })}</div>
-          </div>
-          <span style={{ fontSize: '2rem' }} aria-hidden>🪐</span>
-        </div>
-        {data.earnings.byAgent.length > 0 && (
-          <div className="bars">
-            {data.earnings.byAgent.map((a) => (
-              <div key={a.agent} className={`bar a-${a.agent}`}>
-                <span>{a.name}</span>
-                <div className="track"><div className="fill" style={{ width: `${data.earnings.total ? Math.max(4, (a.value / data.earnings.total) * 100) : 0}%`, background: 'var(--c)' }} /></div>
-                <span className="small">{money(a.value, data.business.currency)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {checklist && checklist.some((c) => !c.done) && (
-        <details style={{ marginTop: 16 }}>
-          <summary className="btn ghost block">{t('check.title')}</summary>
-          <div style={{ marginTop: 12 }}><Checklist items={checklist} /></div>
-        </details>
-      )}
-    </>
+      <div className="br-col">
+        {data.mode === 'morning' && briefing}
+        {data.mode === 'evening' && briefing}
+        <NeedsYou cards={data.needsYou} onDecided={reload} onOpen={onOpen} dayName={dayName} />
+        <div className="br-desktop-only" style={{ flexDirection: 'column' }}><CommandBar suggestions={data.suggestions} onDone={reload} running={running} /></div>
+        <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
+      </div>
+      <div className="br-col">
+        <CrewFeed groups={data.feed} names={names} animate={intro} onOpen={openEntity} />
+      </div>
+      <div className="br-phone-only"><CommandBar suggestions={data.suggestions} onDone={reload} running={running} /></div>
+    </div>
   );
 }
 
-function NeedCard({ card, onDone }: { card: BridgeData['needsYou'][number]; onDone: () => void }) {
-  const { t, ts } = useI18n();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const ctx = card.context as Record<string, any>;
+/** Soft skeleton shapes in the same layout — no spinners. */
+function Skeleton() {
   return (
-    <article className="card need" data-card-type={card.type}>
-      <div className="who"><span className={`avatar a-${card.agent}`}>{card.agentName[0]}</span>{card.agentName}</div>
-      <div className="title">{ts(card.title)}</div>
-      {(ctx.conversation || ctx.review || ctx.sample) && (
-        <div className="ctx">
-          {ctx.conversation && <div>{ctx.conversation}</div>}
-          {ctx.review && <div>“{ctx.review}”</div>}
-          {ctx.suggestedReply && <div style={{ marginTop: 6 }}><b>{t('needs.suggested')}:</b> {ctx.suggestedReply}</div>}
-          {ctx.sample && <div><b>{t('needs.sample')}:</b> {ctx.sample}</div>}
-        </div>
-      )}
-      <div className="actions">
-        {card.options.map((o) => (
-          <button key={o.key} className={`btn ${o.style === 'primary' ? 'primary' : o.style === 'ghost' ? 'ghost' : ''}`} disabled={!!busy}
-            onClick={async () => {
-              setBusy(o.key);
-              setErr(null);
-              try {
-                await api(`/bridge/cards/${card.id}/decide`, { body: { option: o.key } });
-                onDone();
-              } catch (e) {
-                setErr((e as ApiError).message);
-                setBusy(null);
-              }
-            }}>
-            {busy === o.key ? '…' : t(o.label)}
-          </button>
-        ))}
-      </div>
-      {err && <p className="error small">{err}</p>}
-    </article>
+    <div className="br-grid" aria-busy="true" aria-label="Loading">
+      <div className="br-col"><div className="sk" style={{ height: 470, borderRadius: 28 }} /><div className="sk" style={{ height: 70 }} /></div>
+      <div className="br-col"><div className="sk" style={{ height: 240 }} /><div className="sk" style={{ height: 200 }} /></div>
+      <div className="br-col">{[0, 1, 2, 3].map((i) => <div key={i} className="sk" style={{ height: 64, borderRadius: 18 }} />)}</div>
+    </div>
   );
-}
-
-function FeedRow({ group }: { group: BridgeData['feed'][number] }) {
-  const { ts, lang } = useI18n();
-  const [open, setOpen] = useState(false);
-  const many = group.items.length > 1;
-  return (
-    <li>
-      <span className={`avatar a-${group.agent}`} aria-hidden>{group.agent[0].toUpperCase()}</span>
-      <div className="grow">
-        <div>{ts(group.sentence)}</div>
-        <div className="when">{ago(group.at, lang)}{many && <button className="link-btn small" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '▲' : `▼ ${group.items.length}`}</button>}</div>
-        {many && open && (
-          <ul className="sub">
-            {group.items.map((i) => <li key={i.id}>{ts(i.sentence)}</li>)}
-          </ul>
-        )}
-      </div>
-    </li>
-  );
-}
-
-function ago(iso: string, lang: string) {
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
-  if (Math.abs(mins) < 60) return rtf.format(-mins, 'minute');
-  const hrs = Math.round(mins / 60);
-  if (Math.abs(hrs) < 24) return rtf.format(-hrs, 'hour');
-  return rtf.format(-Math.round(hrs / 24), 'day');
 }

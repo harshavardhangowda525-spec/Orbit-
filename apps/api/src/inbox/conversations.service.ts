@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { JobsService } from '../jobs/jobs.service';
 import type { Tx } from '../db/db.service';
 import { postFeed } from '../common/feed';
 import { liveToBusiness, liveToConversation } from '../realtime/live';
@@ -7,6 +8,8 @@ import { badRequest, notFound } from '../common/errors';
 /** Conversation state changes shared by Aria, the inbox and the public chat. */
 @Injectable()
 export class ConversationsService {
+  constructor(private readonly jobs: JobsService) {}
+
   async addMessage(tx: Tx, conversationId: string, m: { direction: 'in' | 'out'; sender: string; body: string; language?: string | null; channelMessageId?: string | null; meta?: unknown }) {
     const row = await tx.one(
       `INSERT INTO messages (conversation_id, direction, sender, body, language, channel_message_id, delivery_status, meta)
@@ -19,6 +22,14 @@ export class ConversationsService {
        WHERE id = $1`,
       [conversationId, m.direction],
     );
+    // Outbound messages on external channels (email now; WhatsApp/SMS in Phase 3) are sent by a job after commit.
+    if (m.direction === 'out') {
+      const ch = await tx.one(`SELECT channel FROM conversations WHERE id = $1`, [conversationId]);
+      if (ch && !['website_chat', 'chat_link'].includes(ch.channel)) {
+        const businessId = tx.businessId!;
+        tx.afterCommit(() => this.jobs.enqueue('powers.deliver', { businessId, messageId: row.id }, { jobId: `deliver:${row.id}` }).catch(() => undefined));
+      }
+    }
     const event = { type: 'message.new' as const, data: { conversationId, message: row } };
     liveToConversation(tx, conversationId, event);
     liveToBusiness(tx, event);

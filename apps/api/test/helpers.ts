@@ -45,6 +45,7 @@ export function api(app: NestExpressApplication, token: string, businessId?: str
     post: (u: string, b: object = {}) => h(request(s).post(u)).send(b),
     put: (u: string, b: object = {}) => h(request(s).put(u)).send(b),
     patch: (u: string, b: object = {}) => h(request(s).patch(u)).send(b),
+    delete: (u: string) => h(request(s).delete(u)),
   };
 }
 

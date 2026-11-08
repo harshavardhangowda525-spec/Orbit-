@@ -19,7 +19,7 @@ describe('The Bridge with seeded businesses', () => {
     const r = await api(app, owner.token, ids.salon).get('/bridge').expect(200);
     const elapsed = Date.now() - started;
     const b = r.body;
-    expect(b.business.name).toBe('Glow Salon');
+    expect(b.business.name).toBe('Glow Studio');
     expect(['morning', 'evening']).toContain(b.mode);
     expect(b.pulse.score).toBeGreaterThanOrEqual(0);
     expect(b.pulse.score).toBeLessThanOrEqual(100);

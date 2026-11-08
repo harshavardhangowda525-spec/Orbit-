@@ -18,6 +18,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { AiModule } from './ai/ai.module';
 import { KnowledgeModule } from './knowledge/knowledge.service';
 import { BriefingModule } from './briefing/briefing.service';
+import { PowersModule } from './powers/powers.service';
 
 @Controller()
 class HealthController {
@@ -39,6 +40,7 @@ class HealthController {
     KnowledgeModule,
     AiModule,
     BriefingModule,
+    PowersModule,
     AuditModule,
     AuthModule,
     TemplatesModule,
