@@ -1,0 +1,26 @@
+{
+  "name": "orbit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Orbit — the AI operating system for small businesses",
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @orbit/shared",
+    "build": "npm run build:shared && npm run build -w @orbit/api && npm run build -w @orbit/web",
+    "db:setup": "bash infra/db/setup-local.sh",
+    "db:migrate": "npm run migrate -w @orbit/api",
+    "db:seed": "npm run seed -w @orbit/api",
+    "dev:api": "npm run dev -w @orbit/api",
+    "dev:web": "npm run dev -w @orbit/web",
+    "test": "npm run build:shared && npm test -w @orbit/shared && npm test -w @orbit/api",
+    "test:e2e": "npm run e2e -w @orbit/web",
+    "typecheck": "npm run build:shared && npm run typecheck -w @orbit/api && npm run typecheck -w @orbit/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
