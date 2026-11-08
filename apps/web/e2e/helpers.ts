@@ -17,4 +17,6 @@ export async function signIn(page: Page, phone: string) {
   const code = (await note.textContent())!.match(/\d{6}/)![0];
   await page.getByLabel('Code').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  // Signed in once the app has left the login page (to The Bridge or onboarding).
+  await page.waitForURL((u) => !u.pathname.startsWith('/login'));
 }

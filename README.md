@@ -2,7 +2,7 @@
 
 Orbit gives every small business an online presence and a team of AI agents (the **Crew**: Aria, Vox, Nudge, Ledger, Spark, managed by **Orbit**) that run the front office. The owner works from **The Bridge**, a phone-first home screen that feels like talking to a trusted manager.
 
-**Status: Phase 1 (Foundation) complete.** See [docs/PHASE1.md](docs/PHASE1.md) for what was built, what's left and known issues.
+**Status: Phase 2 (Core Orbit) complete.** See [docs/PHASE2.md](docs/PHASE2.md) (and [docs/PHASE1.md](docs/PHASE1.md)) for what was built, what's left and known issues.
 
 ## Repository layout
 
@@ -19,7 +19,7 @@ infra/db          PostgreSQL roles and database setup
 
 ## Setup
 
-Requirements: Node 20+, PostgreSQL 16 with `pgvector`, Redis (used from Phase 2).
+Requirements: Node 20+, PostgreSQL 16 with `pgvector`, Redis (live updates and background jobs).
 
 ```bash
 npm install
@@ -53,11 +53,13 @@ Open http://localhost:3000. In development the sign-in code is shown on screen (
 
 | Seeded account | Phone |
 |---|---|
-| Glow Salon owner (Base plan) | +91 98000 00001 |
+| Glow Studio owner, Meera (Base plan) | +91 98000 00001 |
 | IronCore Gym owner (Business plan) | +91 98000 00002 |
 | Platform admin | +91 98000 00000 |
 
-Public pages: http://localhost:3000/glow-salon and http://localhost:3000/ironcore-gym
+Public pages: http://localhost:3000/glow-studio and http://localhost:3000/ironcore-gym (booking and chat with Aria). The inbox is at http://localhost:3000/inbox.
+
+No Anthropic key yet? Start the API with `AI_PROVIDER=fake` to use the offline demo brain (answers from FAQs, offers real slots).
 
 ## Tests
 
@@ -67,7 +69,7 @@ npm run test:e2e
 ```
 
 - `npm test` runs the shared unit tests and the API tests against the separate `orbit_test` database. That database is reset automatically.
-- `npm run test:e2e` needs the API on :4000 (seeded) and the web app on :3000. Start the API with `THROTTLE_DISABLED=true` if you run e2e repeatedly; otherwise the OTP rate limit (5 per minute) will block the test sign-ins.
+- `npm run test:e2e` needs the API on :4000 (seeded) and the web app on :3000. Start the API with `AI_PROVIDER=fake THROTTLE_DISABLED=true`. Each e2e run re-seeds the local sample businesses and clears sign-in code history (`apps/web/e2e/global-setup.ts`), so never point it at a real database.
 
 ## Environment variables
 
@@ -88,6 +90,11 @@ npm run test:e2e
 | `OTP_DEV_ECHO` | Returns the OTP in the response (ignored in production). |
 | `PLATFORM_ADMIN_PHONES` | E.164 numbers that become platform admins. |
 | `THROTTLE_DISABLED` | Test/e2e only. |
+| `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_EFFORT` | Aria's model. `claude` (default, Opus 5.5 at low effort) or `fake` (offline demo). |
+| `JOBS_MODE`, `JOBS_ENABLED`, `REALTIME_MODE` | Background jobs (BullMQ) and live updates (Redis pub/sub). |
+| `POWERS_ENCRYPTION_KEY` | 32-byte base64 key encrypting Power tokens. Required in production. |
+| `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `WEB_BASE_URL` | Google Calendar and Gmail Powers (OAuth). |
+| `DEV_DELIVER` | Development only: log messages to customers with no connected channel. |
 
 **Web (`apps/web/.env.local`)**
 
@@ -118,3 +125,6 @@ npm run test:e2e
 - **Plans and templates** are seeded from `packages/shared` but read from the database, so they are editable from the admin panel without code changes.
 - **Agents** have least-privilege tool and Power lists (`packages/shared/src/agents.ts`), ready for the Phase 2 AI layer.
 - **Logging:** structured JSON with `requestId`, `business_id` and `user_id` on every line.
+- **AI layer** (`apps/api/src/ai`): one wrapper for all model calls; each agent gets only its own tools, which run inside the business's RLS context; guardrails block made-up prices and hand over to a person when needed; tokens and cost are logged per business and agent.
+- **Live updates:** WebSocket at `/ws` (owners: their business only; customers: their own chat only), fanned out through Redis.
+- **Background jobs:** BullMQ. Every job carries `business_id`, runs under it, re-checks state (idempotent) and retries with backoff.

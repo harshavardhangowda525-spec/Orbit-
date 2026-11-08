@@ -7,24 +7,32 @@ import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
+import { useRouter } from 'next/navigation';
 import { useLive, ownerLiveQuery } from '@/lib/live';
 
 /** One conversation: full history across channels, customer card, take over / hand back to Aria. */
 export default function Conversation() {
   const { id } = useParams<{ id: string }>();
   const { t, money, lang } = useI18n();
-  const { me } = useSession();
+  const { me, business, loading } = useSession();
+  const router = useRouter();
+  useEffect(() => {
+    if (!loading && !me) router.replace('/login');
+  }, [loading, me, router]);
+  const ready = !!(business || me?.impersonation);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
-  const load = useCallback(() => api(`/inbox/${id}`).then(setData).catch((e) => setError((e as ApiError).message)), [id]);
+  const load = useCallback(() => (ready ? api(`/inbox/${id}`).then(setData).catch((e) => setError((e as ApiError).message)) : Promise.resolve()), [id, ready]);
   useEffect(() => {
     load();
   }, [load]);
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [data?.messages?.length]);
-  useLive(ownerLiveQuery(), (e) => (e.type === 'message.new' || e.type === 'conversation.updated') && load());
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' });
+  }, [data?.messages?.length]);
+  useLive(ready ? ownerLiveQuery() : null, (e) => (e.type === 'message.new' || e.type === 'conversation.updated') && load());
 
   const act = async (path: string, body?: object) => {
     setBusy(true);

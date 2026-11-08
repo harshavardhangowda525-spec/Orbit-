@@ -42,7 +42,8 @@ test('The Bridge renders seeded data on a mid-range phone in under 2 seconds', a
   await page.getByLabel('भाषा').first().selectOption('en');
 
   // Tapping an agent in the orbit opens it in the Crew view.
-  await page.getByRole('button', { name: /^Vox:/ }).click();
+  // Agents keep orbiting (never "stable" for Playwright), so tap without waiting for stillness.
+  await page.getByRole('button', { name: /^Vox:/ }).click({ force: true });
   await expect(page.locator('[data-agent="vox"]')).toContainText('Not on your plan');
   await expect(page.locator('[data-agent="aria"]')).toBeVisible();
 });

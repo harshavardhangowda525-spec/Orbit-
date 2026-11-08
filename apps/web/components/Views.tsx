@@ -13,7 +13,9 @@ function useLoad<T>(path: string) {
   const reload = useCallback(() => {
     api<T>(path).then(setData).catch((e) => setError((e as ApiError).message));
   }, [path]);
-  useEffect(reload, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
   return { data, error, reload };
 }
 

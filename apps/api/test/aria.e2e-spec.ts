@@ -201,6 +201,11 @@ describe('Aria on web chat', () => {
     expect(r.body.messages[1].body).toContain('does not belong to this customer');
   });
 
+  it('browsers may send the visitor token cross-origin (CORS preflight)', async () => {
+    const r = await http().options(`/public/businesses/${A.slug}/chat/x/messages`).set('origin', 'http://localhost:3000').set('access-control-request-method', 'POST').set('access-control-request-headers', 'content-type,x-visitor-token');
+    expect(r.headers['access-control-allow-headers']).toContain('x-visitor-token');
+  });
+
   it('visitor tokens only open their own conversation, in their own business', async () => {
     const a = await startChat(A.slug);
     const b = await startChat(B.slug);

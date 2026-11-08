@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useLive, ownerLiveQuery } from '@/lib/live';
+import { useSession } from '@/lib/session';
+import { useRouter } from 'next/navigation';
 import { timeAgo } from '@/components/bridge/Feed';
 
 const FILTERS = ['all', 'needs_me', 'aria', 'human', 'closed'] as const;
@@ -13,15 +15,24 @@ const FILTERS = ['all', 'needs_me', 'aria', 'human', 'closed'] as const;
 /** Unified inbox: every channel in one list. */
 export default function Inbox() {
   const { t } = useI18n();
+  const { business, me, loading } = useSession();
+  const router = useRouter();
+  useEffect(() => {
+    if (!loading && !me) router.replace('/login');
+  }, [loading, me, router]);
+  const ready = !!(business || me?.impersonation);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('all');
   const [rows, setRows] = useState<any[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
+    if (!ready) return;
     const q = filter === 'all' ? '' : filter === 'aria' || filter === 'human' ? `?handledBy=${filter}` : `?status=${filter}`;
     api<any[]>(`/inbox${q}`).then(setRows).catch((e) => setError((e as ApiError).message));
-  }, [filter]);
-  useEffect(load, [load]);
-  useLive(ownerLiveQuery(), (e) => (e.type === 'message.new' || e.type === 'conversation.updated') && load());
+  }, [filter, ready]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useLive(ready ? ownerLiveQuery() : null, (e) => (e.type === 'message.new' || e.type === 'conversation.updated') && load());
   return (
     <main className="page">
       <div className="topbar">

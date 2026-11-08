@@ -56,7 +56,9 @@ export function ChatPanel({ slug, businessName, lang, openOnLoad, embed = false 
   useEffect(() => {
     if (open && !conv) start().catch((e) => setError(e.message));
   }, [open, conv, start]);
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [messages.length, waiting]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, waiting]);
 
   // Team replies arrive live.
   useLive(conv ? `visitor=${encodeURIComponent(conv.token)}&conversation=${conv.id}&slug=${slug}` : null, (e) => {
@@ -76,9 +78,10 @@ export function ChatPanel({ slug, businessName, lang, openOnLoad, embed = false 
     setWaiting(true);
     try {
       const r = await call(`/${conv.id}/messages`, { method: 'POST', body: JSON.stringify({ text: value.trim() }), token: conv.token });
+      // Live replies can arrive before this response: merge, de-duplicate, keep time order.
       setMessages((ms) => {
         const rest = ms.filter((m) => m.id !== temp.id);
-        return [...rest, ...r.messages.filter((m: Msg) => !rest.some((x) => x.id === m.id))];
+        return [...rest, ...r.messages.filter((m: Msg) => !rest.some((x) => x.id === m.id))].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
       });
       setHandledBy(r.handledBy);
     } catch (e: any) {

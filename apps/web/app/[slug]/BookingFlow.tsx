@@ -9,8 +9,14 @@ interface Service { id: string; name: string; durationMin: number; price: number
 /** Pick service → person (or any) → a real free time → name + phone → confirmed. */
 export function BookingFlow({ slug, services, currency, timezone, lang, businessName }: { slug: string; services: Service[]; currency: string; timezone: string; lang: string; businessName: string }) {
   const t = (k: string, p: Record<string, string | number> = {}) => translate(lang, k, p);
-  const bookable = services.filter((s) => s.durationMin > 0);
   const [open, setOpen] = useState(false);
+  // The page may be cached; load the current services when the customer starts booking.
+  const [live, setLive] = useState<Service[] | null>(null);
+  useEffect(() => {
+    if (!open || live) return;
+    fetch(`${API_URL}/public/businesses/${slug}`).then((r) => r.json()).then((b) => Array.isArray(b?.services) && setLive(b.services)).catch(() => undefined);
+  }, [open, live, slug]);
+  const bookable = (live ?? services).filter((s) => s.durationMin > 0);
   const [svc, setSvc] = useState<Service | null>(null);
   const [staff, setStaff] = useState<{ id: string; name: string }[] | null>(null);
   const [staffId, setStaffId] = useState<string | null | undefined>(undefined);
@@ -38,10 +44,19 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
     if (!svc || staffId === undefined) return;
     setSlots(null);
     const q = new URLSearchParams({ serviceId: svc.id, days: '7', ...(staffId ? { staffId } : {}) });
-    fetch(`${API_URL}/public/businesses/${slug}/slots?${q}`).then((r) => r.json()).then((s) => {
-      setSlots(Array.isArray(s) ? s : []);
-      setDay(Array.isArray(s) && s.length ? dayKey(s[0].start) : null);
-    });
+    fetch(`${API_URL}/public/businesses/${slug}/slots?${q}`)
+      .then(async (r) => {
+        const s = await r.json().catch(() => null);
+        if (!r.ok || !Array.isArray(s)) {
+          // e.g. the service just changed: say so instead of pretending there are no free times.
+          setError(s?.error?.message ?? t('chat.error'));
+          setSvc(null);
+          return;
+        }
+        setSlots(s);
+        setDay(s.length ? dayKey(s[0].start) : null);
+      })
+      .catch(() => setError(t('chat.error')));
   }, [svc, staffId, slug]);
 
   async function confirm() {

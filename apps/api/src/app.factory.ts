@@ -11,7 +11,7 @@ export function configureApp(app: NestExpressApplication) {
   app.disable('x-powered-by');
   app.use(requestContextMiddleware);
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.enableCors({ origin: config.webOrigins, allowedHeaders: ['authorization', 'content-type', 'x-business-id', 'x-request-id'] });
+  app.enableCors({ origin: config.webOrigins, allowedHeaders: ['authorization', 'content-type', 'x-business-id', 'x-request-id', 'x-visitor-token'] });
   app.useBodyParser('json', { limit: '256kb' });
   return app;
 }
