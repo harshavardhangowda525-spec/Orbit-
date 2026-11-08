@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { midRangePhone, signIn } from './helpers';
+import { midRangePhone, signIn, SEED } from './helpers';
 
 const API = process.env.API_URL ?? 'http://localhost:4000';
 
 test('The Bridge renders seeded data on a mid-range phone in under 2 seconds', async ({ page }) => {
-  await signIn(page, '+919800000001');
+  await signIn(page, SEED.salon);
   await expect(page.getByTestId('pulse')).toBeVisible();
 
   await midRangePhone(page);
@@ -49,7 +49,7 @@ test('The Bridge renders seeded data on a mid-range phone in under 2 seconds', a
 });
 
 test('new activity arrives live over WebSocket without reloading', async ({ page, request }) => {
-  await signIn(page, '+919800000001');
+  await signIn(page, SEED.salon);
   await expect(page.getByTestId('feed')).toBeVisible();
   const r = await page.evaluate(() => ({ token: localStorage.getItem('orbit.token'), business: localStorage.getItem('orbit.business') }));
   const cal = await request.get(`${API}/calendar`, { headers: { authorization: `Bearer ${r.token}`, 'x-business-id': r.business! } });
@@ -67,7 +67,7 @@ test('new activity arrives live over WebSocket without reloading', async ({ page
 test('desktop shows three columns with tiles inside the hero', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-IN', timezoneId: 'Asia/Kolkata' });
   const page = await ctx.newPage();
-  await signIn(page, '+919800000001');
+  await signIn(page, SEED.salon);
   await expect(page.getByTestId('pulse')).toBeVisible();
   const hero = await page.getByTestId('pulse').boundingBox();
   const needs = await page.getByTestId('needs-you').boundingBox();

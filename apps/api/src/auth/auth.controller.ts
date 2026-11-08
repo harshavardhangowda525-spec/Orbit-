@@ -13,8 +13,8 @@ import { AuthService } from './auth.service';
 import { ClientIp, CurrentUser, Public } from './guards';
 import type { AuthUser } from './types';
 
-const OtpRequest = z.object({ phone: z.string().min(1).max(20) });
-const OtpVerify = z.object({ phone: z.string().min(1).max(20), code: z.string().regex(/^\d{6}$/) });
+const CodeRequest = z.object({ email: z.string().min(1).max(254) });
+const CodeVerify = z.object({ email: z.string().min(1).max(254), code: z.string().regex(/^\d{6}$/) });
 const GoogleBody = z.object({ idToken: z.string().min(10) });
 const MePatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -27,18 +27,18 @@ export class AuthController {
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post('otp/request')
-  requestOtp(@Body(new ZodPipe(OtpRequest)) body: z.infer<typeof OtpRequest>) {
+  @Post('email/request')
+  requestCode(@Body(new ZodPipe(CodeRequest)) body: z.infer<typeof CodeRequest>) {
     ownSignInOnly();
-    return this.auth.requestOtp(body.phone);
+    return this.auth.requestCode(body.email);
   }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('otp/verify')
-  verifyOtp(@Body(new ZodPipe(OtpVerify)) body: z.infer<typeof OtpVerify>, @ClientIp() ip: string) {
+  @Post('email/verify')
+  verifyCode(@Body(new ZodPipe(CodeVerify)) body: z.infer<typeof CodeVerify>, @ClientIp() ip: string) {
     ownSignInOnly();
-    return this.auth.verifyOtp(body.phone, body.code, ip);
+    return this.auth.verifyCode(body.email, body.code, ip);
   }
 
   @Public()

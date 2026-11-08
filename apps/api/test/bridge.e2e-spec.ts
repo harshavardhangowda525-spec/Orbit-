@@ -2,7 +2,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Client } from 'pg';
 import { translate } from '@orbit/shared';
 import { seed } from '../src/scripts/seed';
-import { bootApp, signIn, api } from './helpers';
+import { bootApp, signIn, api, SEED } from './helpers';
 
 describe('The Bridge with seeded businesses', () => {
   let app: NestExpressApplication;
@@ -14,7 +14,7 @@ describe('The Bridge with seeded businesses', () => {
   afterAll(() => app.close());
 
   it('renders Pulse, Needs You, Orbit Feed and Earnings for the salon', async () => {
-    const owner = await signIn(app, '+919800000001');
+    const owner = await signIn(app, SEED.salon);
     const started = Date.now();
     const r = await api(app, owner.token, ids.salon).get('/bridge').expect(200);
     const elapsed = Date.now() - started;
@@ -41,7 +41,7 @@ describe('The Bridge with seeded businesses', () => {
   });
 
   it('gym owner sees only the gym, with the Spark campaign card', async () => {
-    const owner = await signIn(app, '+919800000002');
+    const owner = await signIn(app, SEED.gym);
     const b = (await api(app, owner.token, ids.gym).get('/bridge').expect(200)).body;
     expect(b.business.name).toBe('IronCore Gym');
     expect(b.needsYou).toHaveLength(1);
@@ -51,7 +51,7 @@ describe('The Bridge with seeded businesses', () => {
   });
 
   it('deciding a card is one tap and appears in the Feed', async () => {
-    const owner = await signIn(app, '+919800000001');
+    const owner = await signIn(app, SEED.salon);
     const a = api(app, owner.token, ids.salon);
     const card = (await a.get('/bridge').expect(200)).body.needsYou.find((c: any) => c.type === 'discount');
     expect((await a.post(`/bridge/cards/${card.id}/decide`, { option: 'maybe' })).body.error.code).toBe('invalid_option');
@@ -70,7 +70,7 @@ describe('The Bridge with seeded businesses', () => {
     const task = await c.query(`INSERT INTO tasks (agent_key, created_by_kind, goal, status) VALUES ('spark', 'orbit', 'send offer', 'waiting_approval') RETURNING id`);
     await c.query(`UPDATE approval_cards SET expires_at = now() - interval '1 minute', task_id = $1 WHERE type = 'campaign'`, [task.rows[0].id]);
     await c.query('COMMIT');
-    const owner = await signIn(app, '+919800000002');
+    const owner = await signIn(app, SEED.gym);
     const b = (await api(app, owner.token, ids.gym).get('/bridge').expect(200)).body;
     expect(b.needsYou).toEqual([]);
     expect(b.feed[0].sentence.key).toBe('feed.orbit.card_expired');
@@ -83,7 +83,7 @@ describe('The Bridge with seeded businesses', () => {
   });
 
   it('the Command Bar records the request as an Orbit task', async () => {
-    const owner = await signIn(app, '+919800000001');
+    const owner = await signIn(app, SEED.salon);
     const a = api(app, owner.token, ids.salon);
     const r = await a.post('/bridge/commands', { text: 'Block my calendar tomorrow afternoon' }).expect(201);
     expect(r.body.reply.key).toBe('command.received');

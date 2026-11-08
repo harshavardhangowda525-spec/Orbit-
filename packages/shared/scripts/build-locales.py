@@ -24,7 +24,7 @@ k('landing.cta','Start free','मुफ़्त शुरू करें','ಉ
 k('landing.under2','Ready in under 2 minutes. No card needed.','2 मिनट से कम में तैयार। कार्ड की ज़रूरत नहीं।','2 ನಿಮಿಷಕ್ಕಿಂತ ಕಡಿಮೆ ಸಮಯದಲ್ಲಿ ಸಿದ್ಧ. ಕಾರ್ಡ್ ಬೇಕಿಲ್ಲ.')
 k('login.title','Sign in with your phone','अपने फ़ोन से साइन इन करें','ನಿಮ್ಮ ಫೋನ್ ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ')
 k('login.phone','Mobile number','मोबाइल नंबर','ಮೊಬೈಲ್ ಸಂಖ್ಯೆ')
-k('login.send_code','Send me a code','मुझे कोड भेजें','ನನಗೆ ಕೋಡ್ ಕಳುಹಿಸಿ')
+k('login.send_code','Email me a code','मुझे ईमेल पर कोड भेजें','ನನಗೆ ಇಮೇಲ್‌ನಲ್ಲಿ ಕೋಡ್ ಕಳುಹಿಸಿ')
 k('login.enter_code','Enter the 6-digit code','6 अंकों का कोड डालें','6 ಅಂಕಿಯ ಕೋಡ್ ನಮೂದಿಸಿ')
 k('login.code','Code','कोड','ಕೋಡ್')
 k('login.code_sent','We sent a code to {{phone}}.','हमने {{phone}} पर कोड भेजा है।','ನಾವು {{phone}} ಗೆ ಕೋಡ್ ಕಳುಹಿಸಿದ್ದೇವೆ.')
@@ -490,6 +490,17 @@ k('login.google_failed','Google sign-in is not available right now. Please use y
 k('login.wait_minute','Please wait a minute before asking for another code.','दूसरा कोड माँगने से पहले कृपया एक मिनट रुकें।','ಇನ್ನೊಂದು ಕೋಡ್ ಕೇಳುವ ಮೊದಲು ದಯವಿಟ್ಟು ಒಂದು ನಿಮಿಷ ಕಾಯಿರಿ.')
 k('login.code_failed','We could not send a code to that number. Please check it and try again.','हम उस नंबर पर कोड नहीं भेज पाए। कृपया नंबर जाँचकर फिर कोशिश करें।','ಆ ಸಂಖ್ಯೆಗೆ ಕೋಡ್ ಕಳುಹಿಸಲು ಆಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.')
 k('login.code_wrong','That code is not right or has expired. Please try again.','यह कोड सही नहीं है या समाप्त हो गया है। कृपया फिर कोशिश करें।','ಈ ಕೋಡ್ ಸರಿಯಿಲ್ಲ ಅಥವಾ ಅವಧಿ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.')
+
+
+# ---------- Email sign-in ----------
+k('login.welcome','Welcome to Orbit','Orbit में आपका स्वागत है','Orbit ಗೆ ಸ್ವಾಗತ')
+k('login.tagline','Sign in with your email. Your Crew is waiting.','अपने ईमेल से साइन इन करें। आपका Crew इंतज़ार कर रहा है।','ನಿಮ್ಮ ಇಮೇಲ್ ಮೂಲಕ ಸೈನ್ ಇನ್ ಮಾಡಿ. ನಿಮ್ಮ Crew ಕಾಯುತ್ತಿದೆ.')
+k('login.email','Email address','ईमेल पता','ಇಮೇಲ್ ವಿಳಾಸ')
+k('login.email_invalid','That email address does not look right. Please check it.','यह ईमेल पता सही नहीं लगता। कृपया जाँचें।','ಈ ಇಮೇಲ್ ವಿಳಾಸ ಸರಿಯಿಲ್ಲದಂತಿದೆ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ.')
+k('login.email_failed','We could not send a code to that email. Please check it and try again.','हम उस ईमेल पर कोड नहीं भेज पाए। कृपया जाँचकर फिर कोशिश करें।','ಆ ಇಮೇಲ್‌ಗೆ ಕೋಡ್ ಕಳುಹಿಸಲು ಆಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.')
+k('login.check_email','Check your email','अपना ईमेल देखें','ನಿಮ್ಮ ಇಮೇಲ್ ನೋಡಿ')
+k('login.code_sent_email','We sent a 6-digit code to {{email}}. It can take a minute to arrive.','हमने {{email}} पर 6 अंकों का कोड भेजा है। आने में एक मिनट लग सकता है।','ನಾವು {{email}} ಗೆ 6 ಅಂಕಿಯ ಕೋಡ್ ಕಳುಹಿಸಿದ್ದೇವೆ. ಬರಲು ಒಂದು ನಿಮಿಷ ಆಗಬಹುದು.')
+k('login.change_email','Use a different email','दूसरा ईमेल इस्तेमाल करें','ಬೇರೆ ಇಮೇಲ್ ಬಳಸಿ')
 
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}

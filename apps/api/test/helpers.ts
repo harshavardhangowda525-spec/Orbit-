@@ -19,18 +19,20 @@ export async function bootApp() {
   return app;
 }
 
-let phoneSeq = 0;
-/** A fresh valid Indian mobile number per call, unique per test run. */
-export function newPhone() {
-  phoneSeq++;
-  const base = 7000000000 + ((Date.now() % 100000) * 1000) + phoneSeq;
-  return `+91${String(base).slice(0, 10)}`;
+let emailSeq = 0;
+/** A fresh email address per call, unique per test run. */
+export function newEmail() {
+  emailSeq++;
+  return `owner${Date.now().toString(36)}${emailSeq}@example.com`;
 }
 
-export async function signIn(app: NestExpressApplication, phone = newPhone()) {
-  const r1 = await request(app.getHttpServer()).post('/auth/otp/request').send({ phone }).expect(201);
-  const r2 = await request(app.getHttpServer()).post('/auth/otp/verify').send({ phone, code: r1.body.devCode }).expect(201);
-  return { token: r2.body.token as string, userId: r2.body.user.id as string, phone };
+/** Demo accounts created by the seed. */
+export const SEED = { salon: 'meera@glowstudio.example', gym: 'suresh@ironcore.example', admin: 'admin@orbit.test' };
+
+export async function signIn(app: NestExpressApplication, email = newEmail()) {
+  const r1 = await request(app.getHttpServer()).post('/auth/email/request').send({ email }).expect(201);
+  const r2 = await request(app.getHttpServer()).post('/auth/email/verify').send({ email, code: r1.body.devCode }).expect(201);
+  return { token: r2.body.token as string, userId: r2.body.user.id as string, email };
 }
 
 export function api(app: NestExpressApplication, token: string, businessId?: string) {

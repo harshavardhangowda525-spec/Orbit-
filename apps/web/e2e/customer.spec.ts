@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { signIn } from './helpers';
+import { signIn, SEED } from './helpers';
 
 /**
  * Customer side. Requires the API started with AI_PROVIDER=fake (the demo brain:
@@ -41,7 +41,7 @@ test('the owner takes over a chat from the inbox and the customer sees the reply
   await expect(chat).toContainText('A person from the team is now chatting with you');
 
   const owner = await (await browser.newContext()).newPage();
-  await signIn(owner, '+919800000001');
+  await signIn(owner, SEED.salon);
   await owner.goto('/inbox');
   await owner.getByTestId('inbox-list').getByRole('link').first().click();
   await expect(owner.getByTestId('conversation')).toContainText('I want to talk to a person');

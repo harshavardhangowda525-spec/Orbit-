@@ -55,11 +55,11 @@ npm run dev:web
 
 Open http://localhost:3000. In development the sign-in code is shown on screen (`OTP_DEV_ECHO=true`).
 
-| Seeded account | Phone |
+| Seeded account | Email |
 |---|---|
-| Glow Studio owner, Meera (Base plan) | +91 98000 00001 |
-| IronCore Gym owner (Business plan) | +91 98000 00002 |
-| Platform admin | +91 98000 00000 |
+| Glow Studio owner, Meera (Base plan) | meera@glowstudio.example |
+| IronCore Gym owner (Business plan) | suresh@ironcore.example |
+| Platform admin | admin@orbit.example (`PLATFORM_ADMIN_EMAILS`) |
 
 Public pages: http://localhost:3000/glow-studio and http://localhost:3000/ironcore-gym (booking and chat with Aria). The inbox is at http://localhost:3000/inbox.
 
@@ -90,9 +90,9 @@ npm run test:e2e
 | `WEB_ORIGIN` | Allowed CORS origins (comma-separated). |
 | `PUBLIC_BASE_URL` | Base of public business links and the QR code, e.g. `https://orbit.app`. |
 | `GOOGLE_CLIENT_ID` | Enables Google sign-in. |
-| `SMS_PROVIDER` | `dev` logs OTPs. Production needs a DLT-registered provider adapter. |
-| `OTP_DEV_ECHO` | Returns the OTP in the response (ignored in production). |
-| `PLATFORM_ADMIN_PHONES` | E.164 numbers that become platform admins. |
+| `EMAIL_PROVIDER` | `dev` logs sign-in codes (local). Hosted deployments use Supabase Auth, which emails the codes. |
+| `OTP_DEV_ECHO` | Returns the sign-in code in the response (ignored in production). |
+| `PLATFORM_ADMIN_EMAILS` | Email addresses that become platform admins. |
 | `THROTTLE_DISABLED` | Test/e2e only. |
 | `AUTH_PROVIDER`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_EMAILS` | `supabase` = sign-in by Supabase Auth (tokens checked against the project's signing keys; the secret only for legacy projects). Default `orbit` (local). |
 | `DATABASE_SSL`, `DATABASE_CA_CERT` | `require` for hosted Postgres such as Supabase; `verify` also checks the certificate. |

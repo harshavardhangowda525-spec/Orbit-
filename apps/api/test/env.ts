@@ -7,6 +7,6 @@ process.env.JWT_SECRET = 'test-secret';
 process.env.OTP_DEV_ECHO = 'true';
 process.env.THROTTLE_DISABLED = 'true';
 process.env.LOG_SILENT = 'true';
-process.env.PLATFORM_ADMIN_PHONES = '+919800000000';
+process.env.PLATFORM_ADMIN_EMAILS = 'admin@orbit.test';
 process.env.PUBLIC_BASE_URL = 'https://orbit.test';
 process.env.AI_PROVIDER = 'fake';

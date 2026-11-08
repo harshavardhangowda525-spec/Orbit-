@@ -48,7 +48,9 @@ services:
         sync: false
       - key: WEB_BASE_URL
         sync: false
-      - key: PLATFORM_ADMIN_PHONES
+      - key: PLATFORM_ADMIN_EMAILS
+        sync: false
+      - key: SEED_OWNER_EMAIL
         sync: false
       - key: AI_PROVIDER
         value: fake

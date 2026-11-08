@@ -3,10 +3,10 @@ import { midRangePhone, signIn } from './helpers';
 
 test('a new owner sets up Orbit on a phone in under 2 minutes', async ({ page }) => {
   await midRangePhone(page);
-  const phone = `+9178${String(Date.now()).slice(-8)}`;
+  const email = `new${Date.now()}@example.com`;
   const started = Date.now();
 
-  await signIn(page, phone);
+  await signIn(page, email);
   await expect(page.getByRole('heading', { name: 'What kind of business do you run?' })).toBeVisible();
   await page.locator('[data-type="salon"]').click();
 
@@ -55,8 +55,8 @@ test('a new owner sets up Orbit on a phone in under 2 minutes', async ({ page })
 });
 
 test('resume works mid-way through onboarding', async ({ page }) => {
-  const phone = `+9179${String(Date.now()).slice(-8)}`;
-  await signIn(page, phone);
+  const email = `resume${Date.now()}@example.com`;
+  await signIn(page, email);
   await page.locator('[data-type="gym"]').click();
   await page.getByRole('button', { name: 'Skip, I will type it' }).click();
   await page.getByLabel('Business name').fill('Peak Fitness');

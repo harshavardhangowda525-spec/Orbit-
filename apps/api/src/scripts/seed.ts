@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { DEFAULT_PLANS, TEMPLATES, localParts, type BusinessType } from '@orbit/shared';
-import { config, pgSsl } from '../config';
+import { auth, config, pgSsl } from '../config';
 import { Tx } from '../db/db.service';
 import { applyTemplate } from '../onboarding/onboarding.service';
 import { migrate } from './migrate';
@@ -8,9 +8,9 @@ import { migrate } from './migrate';
 /**
  * Sample data: two businesses of different types with a realistic day, so
  * The Bridge, Pulse and the isolation tests have something to show.
- *   Admin:            +91 98000 00000
- *   Glow Studio owner (Meera): +91 98000 00001  (Base plan)
- *   IronCore Gym:     +91 98000 00002  (Business plan)
+ *   Admin:            the addresses in PLATFORM_ADMIN_EMAILS
+ *   Glow Studio owner (Meera): meera@glowstudio.example, or SEED_OWNER_EMAIL  (Base plan)
+ *   IronCore Gym owner:        suresh@ironcore.example, or SEED_GYM_OWNER_EMAIL  (Business plan)
  * Re-running the seed replaces these two businesses.
  */
 
@@ -30,7 +30,7 @@ interface SampleBusiness {
   name: string;
   type: BusinessType;
   plan: 'free' | 'base' | 'business';
-  ownerPhone: string;
+  ownerEmail: string;
   ownerName: string;
   city: string;
   address: string;
@@ -45,7 +45,8 @@ const SALON: SampleBusiness = {
   name: 'Glow Studio',
   type: 'salon',
   plan: 'base',
-  ownerPhone: '+919800000001',
+  // Set SEED_OWNER_EMAIL to your own address to sign in as Meera on a hosted preview.
+  ownerEmail: process.env.SEED_OWNER_EMAIL || 'meera@glowstudio.example',
   ownerName: 'Meera',
   city: 'Bengaluru',
   address: '12, 4th Cross, Indiranagar, Bengaluru 560038',
@@ -65,7 +66,7 @@ const GYM: SampleBusiness = {
   name: 'IronCore Gym',
   type: 'gym',
   plan: 'business',
-  ownerPhone: '+919800000002',
+  ownerEmail: process.env.SEED_GYM_OWNER_EMAIL || 'suresh@ironcore.example',
   ownerName: 'Suresh',
   city: 'Mysuru',
   address: '88, Kalidasa Road, VV Mohalla, Mysuru 570002',
@@ -80,17 +81,17 @@ const GYM: SampleBusiness = {
   ],
 };
 
-async function upsertUser(tx: Tx, phone: string, name: string, admin = false) {
+async function upsertUser(tx: Tx, email: string, name: string, admin = false) {
   return tx.one<{ id: string }>(
-    `INSERT INTO users (phone, name, is_platform_admin, auth_providers) VALUES ($1, $2, $3, '[{"provider":"phone"}]')
-     ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, is_platform_admin = users.is_platform_admin OR EXCLUDED.is_platform_admin
+    `INSERT INTO users (email, name, is_platform_admin, auth_providers) VALUES ($1, $2, $3, '[{"provider":"email"}]')
+     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, is_platform_admin = users.is_platform_admin OR EXCLUDED.is_platform_admin
      RETURNING id`,
-    [phone, name, admin],
+    [email.toLowerCase(), name, admin],
   ) as Promise<{ id: string }>;
 }
 
 async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
-  const owner = await upsertUser(tx, s.ownerPhone, s.ownerName);
+  const owner = await upsertUser(tx, s.ownerEmail, s.ownerName);
   const plan = await tx.one(`SELECT id, features FROM plans WHERE code = $1`, [s.plan]);
   // Also remove the sample's earlier name (Glow Salon -> Glow Studio) so re-seeding leaves one copy.
   await tx.q(`DELETE FROM businesses WHERE slug = ANY($1)`, [[s.slug, ...(s.slug === 'glow-studio' ? ['glow-salon'] : [])]]);
@@ -228,7 +229,7 @@ export async function seed(url = config.databaseMigrationUrl) {
   try {
     await client.query('BEGIN');
     if (!(await tx.one(`SELECT 1 FROM plans WHERE code = $1`, [DEFAULT_PLANS[0].code]))) throw new Error('plans missing');
-    for (const phone of config.platformAdminPhones) await upsertUser(tx, phone, 'Orbit Admin', true);
+    for (const email of auth.adminEmails) await upsertUser(tx, email, 'Orbit Admin', true);
     const salon = await createSample(tx, SALON);
     await tx.q(`SELECT set_config('app.business_id', '', true)`);
     const gym = await createSample(tx, GYM);
@@ -244,7 +245,7 @@ export async function seed(url = config.databaseMigrationUrl) {
 
 if (require.main === module) {
   seed()
-    .then((r) => console.log(`Seeded Glow Studio (${r.salon}) and IronCore Gym (${r.gym}).\nSign in with +91 98000 00001 (salon), +91 98000 00002 (gym) or +91 98000 00000 (admin).`))
+    .then((r) => console.log(`Seeded Glow Studio (${r.salon}) and IronCore Gym (${r.gym}).\nSign in with meera@glowstudio.example (salon), suresh@ironcore.example (gym) or an address in PLATFORM_ADMIN_EMAILS (admin).`))
     .catch((e) => {
       console.error(e);
       process.exit(1);

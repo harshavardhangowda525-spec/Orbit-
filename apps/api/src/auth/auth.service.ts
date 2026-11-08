@@ -6,7 +6,7 @@ import { auth, config } from '../config';
 import { DbService } from '../db/db.service';
 import { AppError, badRequest } from '../common/errors';
 import { AuditService } from '../audit/audit.service';
-import { SMS_SENDER, type SmsSender } from './sms';
+import { CODE_MAILER, isEmail, type CodeMailer } from './mailer';
 import { GOOGLE_VERIFIER, type GoogleVerifier } from './google';
 import type { JwtPayload } from './types';
 
@@ -20,65 +20,66 @@ export class AuthService {
     private readonly db: DbService,
     private readonly jwt: JwtService,
     private readonly audit: AuditService,
-    @Inject(SMS_SENDER) private readonly sms: SmsSender,
+    @Inject(CODE_MAILER) private readonly mailer: CodeMailer,
     @Inject(GOOGLE_VERIFIER) private readonly google: GoogleVerifier,
   ) {}
 
-  private hash(phone: string, code: string) {
-    return createHmac('sha256', config.jwtSecret).update(`${phone}:${code}`).digest('hex');
+  private hash(email: string, code: string) {
+    return createHmac('sha256', config.jwtSecret).update(`email:${email}:${code}`).digest('hex');
   }
 
-  async requestOtp(rawPhone: string) {
-    const phone = toE164(rawPhone);
-    if (!phone) throw badRequest('invalid_phone', 'That phone number does not look right. Please check it.');
+  private normEmail(raw: string) {
+    const email = raw.trim().toLowerCase();
+    if (!isEmail(email)) throw badRequest('invalid_email', 'That email address does not look right. Please check it.');
+    return email;
+  }
+
+  /** Orbit's own sign-in (local development): a 6-digit code sent by email. */
+  async requestCode(rawEmail: string) {
+    const email = this.normEmail(rawEmail);
     const recent = await this.db.one<{ n: string }>(
-      `SELECT count(*) AS n FROM otp_codes WHERE phone = $1 AND created_at > now() - interval '1 hour'`,
-      [phone],
+      `SELECT count(*) AS n FROM otp_codes WHERE email = $1 AND created_at > now() - interval '1 hour'`,
+      [email],
     );
     if (Number(recent?.n ?? 0) >= OTP_MAX_PER_HOUR) {
-      throw new AppError(429, 'too_many_requests', 'Too many codes asked for this number. Please try again in an hour.');
+      throw new AppError(429, 'too_many_requests', 'Too many codes asked for this email. Please try again in an hour.');
     }
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await this.db.q(
-      `INSERT INTO otp_codes (phone, code_hash, expires_at) VALUES ($1, $2, now() + make_interval(mins => $3))`,
-      [phone, this.hash(phone, code), OTP_TTL_MIN],
+      `INSERT INTO otp_codes (email, code_hash, expires_at) VALUES ($1, $2, now() + make_interval(mins => $3))`,
+      [email, this.hash(email, code), OTP_TTL_MIN],
     );
-    await this.sms.sendOtp(phone, code);
-    return { phone, expiresInSec: OTP_TTL_MIN * 60, ...(config.otpDevEcho ? { devCode: code } : {}) };
+    await this.mailer.sendCode(email, code);
+    return { email, expiresInSec: OTP_TTL_MIN * 60, ...(config.otpDevEcho ? { devCode: code } : {}) };
   }
 
-  async verifyOtp(rawPhone: string, code: string, ip?: string) {
-    const phone = toE164(rawPhone);
-    if (!phone) throw badRequest('invalid_phone', 'That phone number does not look right. Please check it.');
+  async verifyCode(rawEmail: string, code: string, ip?: string) {
+    const email = this.normEmail(rawEmail);
     const row = await this.db.one<{ id: string; code_hash: string; attempts: number }>(
       `SELECT id, code_hash, attempts FROM otp_codes
-       WHERE phone = $1 AND consumed_at IS NULL AND expires_at > now()
+       WHERE email = $1 AND consumed_at IS NULL AND expires_at > now()
        ORDER BY created_at DESC LIMIT 1`,
-      [phone],
+      [email],
     );
     const wrong = badRequest('otp_wrong', 'That code is not right or has expired. Please try again.');
     if (!row || row.attempts >= OTP_MAX_ATTEMPTS) throw wrong;
     const a = Buffer.from(row.code_hash, 'hex');
-    const b = Buffer.from(this.hash(phone, code.trim()), 'hex');
+    const b = Buffer.from(this.hash(email, code.trim()), 'hex');
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
       await this.db.q(`UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
       throw wrong;
     }
     await this.db.q(`UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, [row.id]);
 
-    const isAdmin = config.platformAdminPhones.includes(phone);
-    const existing = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE phone = $1`, [phone]);
+    const isAdmin = auth.adminEmails.includes(email);
+    const existing = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
     const user = existing
-      ? await this.db.one(
-          `UPDATE users SET last_login_at = now(), is_platform_admin = is_platform_admin OR $2 WHERE id = $1 RETURNING *`,
-          [existing.id, isAdmin],
-        )
+      ? await this.db.one(`UPDATE users SET last_login_at = now(), is_platform_admin = is_platform_admin OR $2 WHERE id = $1 RETURNING *`, [existing.id, isAdmin])
       : await this.db.one(
-          `INSERT INTO users (phone, auth_providers, is_platform_admin, last_login_at)
-           VALUES ($1, '[{"provider":"phone"}]', $2, now()) RETURNING *`,
-          [phone, isAdmin],
+          `INSERT INTO users (email, auth_providers, is_platform_admin, last_login_at) VALUES ($1, '[{"provider":"email"}]', $2, now()) RETURNING *`,
+          [email, isAdmin],
         );
-    await this.audit.write({ actorId: user.id, action: 'auth.sign_in', entity: 'user', entityId: user.id, after: { method: 'otp' }, ip });
+    await this.audit.write({ actorId: user.id, action: 'auth.sign_in', entity: 'user', entityId: user.id, after: { method: 'email_code' }, ip });
     return { token: this.issue({ sub: user.id }), user: publicUser(user), isNew: !existing };
   }
 
@@ -114,7 +115,7 @@ export class AuthService {
     const linked = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE supabase_uid = $1`, [c.sub]);
     if (linked) return linked.id;
     const phone = c.phone ? toE164(c.phone.startsWith('+') ? c.phone : `+${c.phone}`) : null;
-    const isAdmin = (!!phone && config.platformAdminPhones.includes(phone)) || (!!c.email && auth.adminEmails.includes(c.email));
+    const isAdmin = !!c.email && auth.adminEmails.includes(c.email);
     const existing = await this.db.one<{ id: string }>(
       `SELECT id FROM users WHERE supabase_uid IS NULL AND (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND email = $2)) ORDER BY (phone = $1) DESC NULLS LAST LIMIT 1`,
       [phone, c.email],

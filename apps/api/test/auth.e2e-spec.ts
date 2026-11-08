@@ -1,6 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { bootApp, newPhone, signIn, api } from './helpers';
+import { bootApp, newEmail, signIn, api, SEED } from './helpers';
 
 describe('sign-in', () => {
   let app: NestExpressApplication;
@@ -8,38 +8,43 @@ describe('sign-in', () => {
   afterAll(() => app.close());
   const http = () => request(app.getHttpServer());
 
-  it('signs in with phone OTP and normalises the number', async () => {
-    const local = String(newPhone()).slice(3); // 10-digit local form
-    const r1 = await http().post('/auth/otp/request').send({ phone: local }).expect(201);
-    expect(r1.body.phone).toBe(`+91${local}`);
-    const r2 = await http().post('/auth/otp/verify').send({ phone: `+91 ${local}`, code: r1.body.devCode }).expect(201);
+  it('signs in with an emailed 6-digit code; addresses are case-insensitive', async () => {
+    const email = newEmail();
+    const r1 = await http().post('/auth/email/request').send({ email: `  ${email.toUpperCase()} ` }).expect(201);
+    expect(r1.body.email).toBe(email);
+    expect(r1.body.devCode).toMatch(/^\d{6}$/);
+    const r2 = await http().post('/auth/email/verify').send({ email, code: r1.body.devCode }).expect(201);
     expect(r2.body.isNew).toBe(true);
-    expect(r2.body.user.phone).toBe(`+91${local}`);
+    expect(r2.body.user.email).toBe(email);
     // A code works once.
-    expect((await http().post('/auth/otp/verify').send({ phone: local, code: r1.body.devCode })).status).toBe(400);
+    expect((await http().post('/auth/email/verify').send({ email, code: r1.body.devCode })).status).toBe(400);
+    // Signing in again finds the same person.
+    const again = await signIn(app, email);
+    expect(again.userId).toBe(r2.body.user.id);
   });
 
   it('rejects wrong codes and locks the code after 5 tries', async () => {
-    const phone = newPhone();
-    const r1 = await http().post('/auth/otp/request').send({ phone }).expect(201);
+    const email = newEmail();
+    const r1 = await http().post('/auth/email/request').send({ email }).expect(201);
     const wrong = r1.body.devCode === '000000' ? '111111' : '000000';
     for (let i = 0; i < 5; i++) {
-      const r = await http().post('/auth/otp/verify').send({ phone, code: wrong });
+      const r = await http().post('/auth/email/verify').send({ email, code: wrong });
       expect(r.body.error.code).toBe('otp_wrong');
     }
-    expect((await http().post('/auth/otp/verify').send({ phone, code: r1.body.devCode })).body.error.code).toBe('otp_wrong');
+    expect((await http().post('/auth/email/verify').send({ email, code: r1.body.devCode })).body.error.code).toBe('otp_wrong');
   });
 
-  it('limits how many codes one number can ask for', async () => {
-    const phone = newPhone();
-    for (let i = 0; i < 5; i++) await http().post('/auth/otp/request').send({ phone }).expect(201);
-    expect((await http().post('/auth/otp/request').send({ phone })).status).toBe(429);
+  it('limits how many codes one address can ask for', async () => {
+    const email = newEmail();
+    for (let i = 0; i < 5; i++) await http().post('/auth/email/request').send({ email }).expect(201);
+    expect((await http().post('/auth/email/request').send({ email })).status).toBe(429);
   });
 
-  it('rejects invalid numbers in plain language', async () => {
-    const r = await http().post('/auth/otp/request').send({ phone: '12345' });
+  it('rejects invalid addresses in plain language, and SMS sign-in no longer exists', async () => {
+    const r = await http().post('/auth/email/request').send({ email: 'not-an-email' });
     expect(r.status).toBe(400);
-    expect(r.body.error).toEqual({ code: 'invalid_phone', message: 'That phone number does not look right. Please check it.' });
+    expect(r.body.error).toEqual({ code: 'invalid_email', message: 'That email address does not look right. Please check it.' });
+    expect((await http().post('/auth/otp/request').send({ phone: '9845012345' })).status).toBe(404);
   });
 
   it('signs in with Google and links to the same account next time', async () => {
@@ -76,7 +81,7 @@ describe('admin panel', () => {
   });
 
   it('lists businesses, edits plans and templates, and audits every change', async () => {
-    const admin = await signIn(app, '+919800000000');
+    const admin = await signIn(app, SEED.admin);
     const a = api(app, admin.token);
     expect((await a.get('/admin/health').expect(200)).body.ok).toBe(true);
     expect(Array.isArray((await a.get('/admin/businesses').expect(200)).body)).toBe(true);
@@ -100,7 +105,7 @@ describe('admin panel', () => {
   });
 
   it('can suspend a business, which locks its owner out', async () => {
-    const admin = await signIn(app, '+919800000000');
+    const admin = await signIn(app, SEED.admin);
     const owner = await signIn(app);
     const { body } = await api(app, owner.token).post('/onboarding/business', { type: 'repair' }).expect(201);
     await api(app, admin.token).patch(`/admin/businesses/${body.businessId}`, { status: 'suspended' }).expect(200);

@@ -49,11 +49,11 @@ describe('sign-in with Supabase Auth', () => {
     await app.close();
   });
 
-  it('links an existing owner by phone, keeping their businesses', async () => {
-    const owned = await onboard(app, 'salon', 'Supa Salon'); // signs up with Orbit's own codes (still on)
+  it('links an existing owner by email, keeping their businesses', async () => {
+    const owned = await onboard(app, 'salon', 'Supa Salon'); // signs up with Orbit's own email codes (still on)
     process.env.AUTH_PROVIDER = 'supabase';
     process.env.SUPABASE_URL = URL_;
-    const t = await token({ sub: '00000000-0000-4000-8000-000000000001', phone: owned.owner.phone.slice(1), email: '' });
+    const t = await token({ sub: '00000000-0000-4000-8000-000000000001', email: owned.owner.email.toUpperCase(), phone: '' });
     const me = await http().get('/auth/me').set('authorization', `Bearer ${t}`).expect(200);
     expect(me.body.user.id).toBe(owned.owner.userId);
     expect(me.body.businesses.map((b: any) => b.id)).toContain(owned.businessId);
@@ -90,9 +90,9 @@ describe('sign-in with Supabase Auth', () => {
   });
 
   it("turns Orbit's own phone-code sign-in off, while admin impersonation tokens keep working", async () => {
-    expect((await http().post('/auth/otp/request').send({ phone: '9845012345' })).status).toBe(404);
+    expect((await http().post('/auth/email/request').send({ email: 'someone@example.com' })).status).toBe(404);
     expect((await http().post('/auth/google').send({ idToken: 'abcdefghijk' })).status).toBe(404);
-    const admin = await token({ sub: '00000000-0000-4000-8000-000000000006', phone: '919800000000' });
+    const admin = await token({ sub: '00000000-0000-4000-8000-000000000006', email: 'admin@orbit.test' });
     const owned = await http().get('/admin/businesses').set('authorization', `Bearer ${admin}`).expect(200);
     const imp = await http().post(`/admin/businesses/${owned.body[0].id}/impersonate`).set('authorization', `Bearer ${admin}`).expect(201);
     await api(app, imp.body.token, owned.body[0].id).get('/bridge').expect(200);

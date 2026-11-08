@@ -63,21 +63,23 @@ Upgrade both before real businesses use Orbit.
 2. Copy the **Project URL**, for example `https://abcdefghijklm.supabase.co`.
 3. Copy the **publishable** key. Older projects call it the **anon public** key. This key is meant to be public.
 
-### A5. Turn on phone sign-in
-1. Go to **Authentication** → **Sign In / Providers** → **Phone**, and switch **Enable Phone provider** on.
-2. **SMS provider:** real codes to real phones need an SMS provider account. Supabase supports Twilio, MessageBird, Vonage and TextLocal.
-   - For the preview, pick **Twilio**. If you don't have an account yet, enter placeholder values (for example `AC00000000000000000000000000000000`). If Supabase refuses them, create a free Twilio trial and use its values.
-3. In **Test Phone Numbers and OTPs**, add one per line (number without `+`, then `=`, then the code):
-   ```
-   919800000001=123456
-   919800000002=123456
-   919800000000=123456
-   ```
-   - These sign you in as the demo owners: Meera (Glow Studio), the IronCore Gym owner, and the platform admin.
-   - Set **Test OTPs Valid Until** to a date a few weeks away.
-4. Click **Save**.
+### A5. Turn on email codes
+Orbit signs owners in with a 6-digit code sent by email. Email sign-in is on by default in Supabase. One template change makes it send a code instead of a link:
 
-> Anyone who knows a test number can sign in with it. Remove the test numbers before real businesses use Orbit.
+1. Go to **Authentication** → **Emails** (on some projects: **Email Templates**) → **Magic Link**.
+2. Replace the message body with:
+   ```html
+   <h2>Your Orbit sign-in code</h2>
+   <p>Enter this code in Orbit: <strong style="font-size:24px;letter-spacing:4px">{{ .Token }}</strong></p>
+   <p>It expires in one hour. If you did not ask for it, you can ignore this email.</p>
+   ```
+3. Set **Subject** to `Your Orbit sign-in code`, then click **Save**.
+4. Do the same for the **Confirm signup** template, so new owners also get a code.
+5. Check **Authentication** → **Sign In / Providers** → **Email**:
+   - **Enable Email provider** is on.
+   - Switch **Confirm email** on, so that only people who own the inbox can sign in.
+
+> **Who can get emails:** Supabase's built-in email sender only delivers to members of your Supabase team, and only a few emails per hour. That's enough for you to test the preview. Before other business owners sign in, add your own email service under **Project Settings** → **Authentication** → **SMTP Settings** (for example Resend, Brevo, SendGrid or Zoho Mail).
 
 ### A6. (Optional) Google sign-in
 1. Go to **console.cloud.google.com**, open **APIs & Services**, then **OAuth consent screen**.
@@ -118,7 +120,8 @@ If you skip this, set `AUTH_GOOGLE=false` on the web service in Part B. That hid
 | `WEB_ORIGIN` | `https://orbit-web.onrender.com` |
 | `PUBLIC_BASE_URL` | `https://orbit-web.onrender.com` |
 | `WEB_BASE_URL` | `https://orbit-web.onrender.com` |
-| `PLATFORM_ADMIN_PHONES` | `+919800000000` (and your own number, comma-separated) |
+| `PLATFORM_ADMIN_EMAILS` | your email address (people here get the admin panel) |
+| `SEED_OWNER_EMAIL` | your email address (you sign in as Meera, the Glow Studio demo owner) |
 
 **orbit-web:**
 
@@ -149,11 +152,11 @@ Render may add letters to a name if it's already taken, for example `orbit-web-x
 
 ### B5. Try it
 1. Open your **orbit-web** URL. The first visit after a sleep takes about a minute.
-2. Click **Start free**, enter `98000 00001`, click **Send me a code**, then enter `123456`.
-   - You'll land on **The Bridge** for Glow Studio as Meera.
-3. Customer page: open `https://<orbit-web>/glow-studio`. You can book there or chat with Aria.
-4. New business: sign out, then sign in with Google (if A6 is done) to set up your own business.
-   - A brand-new phone number needs a real SMS provider (A5).
+2. Click **Start free**, enter the email you put in `SEED_OWNER_EMAIL`, and click **Email me a code**.
+3. Type the 6-digit code from your inbox. You'll land on **The Bridge** for Glow Studio as Meera.
+4. Customer page: open `https://<orbit-web>/glow-studio`. You can book there or chat with Aria.
+5. New business: sign out, then sign in with another email or with Google (if A6 is done) to set up your own business.
+   - Other people's emails need your own email service (see the note in A5).
 
 ---
 

@@ -8,7 +8,7 @@
  */
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Client } from 'pg';
-import { bootApp, onboard, signIn, api, appDb, asTenant } from './helpers';
+import { bootApp, onboard, signIn, api, appDb, asTenant, SEED } from './helpers';
 
 type Biz = Awaited<ReturnType<typeof onboard>> & { customerId: string; conversationId: string; bookingId: string; taskId: string; cardId: string; feedId: string };
 
@@ -212,7 +212,7 @@ describe('data isolation between businesses', () => {
   });
 
   it('an admin impersonation token is locked to one business', async () => {
-    const admin = await signIn(app, '+919800000000');
+    const admin = await signIn(app, SEED.admin);
     const imp = await api(app, admin.token).post(`/admin/businesses/${A.businessId}/impersonate`).expect(201);
     expect((await api(app, imp.body.token, A.businessId).get('/customers').expect(200)).body).toHaveLength(1);
     expect((await api(app, imp.body.token, B.businessId).get('/customers')).status).toBe(403);
