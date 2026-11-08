@@ -1,28 +1,37 @@
 import { Injectable } from '@nestjs/common';
-import { computePulse, bridgeMode, localParts, type Sentence, type Weekday } from '@orbit/shared';
+import { computePulse, localParts, type Sentence, type Weekday } from '@orbit/shared';
 import { DbService, Tx } from '../db/db.service';
 import { badRequest, notFound } from '../common/errors';
 import { postFeed } from '../common/feed';
+import { liveToBusiness } from '../realtime/live';
+import { ConversationsService } from '../inbox/conversations.service';
 import { groupFeed, type FeedItem } from './feed-group';
 
 const num = (v: unknown) => Number(v ?? 0);
 
+export type DayPart = 'morning' | 'afternoon' | 'evening';
+/** Morning before 12, evening from 6 pm (spec 5.10). */
+export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour >= 18 ? 'evening' : 'afternoon');
+
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService) {}
 
-  /** Everything The Bridge home screen needs, in one round trip (fast on 4G). */
-  async home(businessId: string, now = new Date()) {
+  /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
+  async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
     return this.db.withTenant(businessId, async (tx) => {
-      const biz = await tx.one(`SELECT id, name, slug, timezone, currency, status, plan_id FROM businesses WHERE id = $1`, [businessId]);
+      const biz = await tx.one(`SELECT id, name, slug, timezone, currency, status, created_at FROM businesses WHERE id = $1`, [businessId]);
       if (!biz) throw notFound();
       const tz: string = biz.timezone;
-      const mode = bridgeMode(now, tz);
-      const weekday = localParts(now, tz).weekday as Weekday;
+      const lp = localParts(now, tz);
+      const part = dayPart(lp.hour);
+      const briefingType = force ?? (part === 'evening' ? 'evening' : 'morning');
+      const weekday = lp.weekday as Weekday;
 
       await this.expireCards(tx);
-      const agents = await tx.q<{ agent_key: string; display_name: string; enabled: boolean }>(`SELECT agent_key, display_name, enabled FROM agents`);
+      const agents = await tx.q<{ agent_key: string; display_name: string; enabled: boolean }>(`SELECT agent_key, display_name, enabled FROM agents ORDER BY created_at`);
       const names = Object.fromEntries(agents.map((a) => [a.agent_key, a.display_name]));
+      const owner = userId ? await tx.one(`SELECT name FROM users WHERE id = $1`, [userId]) : null;
 
       const s = await tx.one(
         `WITH b AS (SELECT (date_trunc('day', $1::timestamptz AT TIME ZONE $2) AT TIME ZONE $2) AS start)
@@ -46,6 +55,7 @@ export class BridgeService {
            (SELECT count(*) FROM bookings, b WHERE start_at >= b.start AND start_at < b.start + interval '1 day' AND status = 'no_show') AS no_shows_today,
            (SELECT count(*) FROM invoices WHERE status IN ('sent', 'overdue')) AS unpaid_invoices,
            (SELECT COALESCE(sum(total), 0) FROM invoices WHERE status IN ('sent', 'overdue')) AS unpaid_amount,
+           (SELECT count(*) FROM feed_events WHERE event_type NOT IN ('business_created', 'business_live')) AS crew_events,
            (SELECT min(start_at) FROM bookings, b WHERE start_at >= GREATEST(b.start, $1::timestamptz) AND start_at < b.start + interval '1 day' AND status IN ('pending', 'confirmed') AND deleted_at IS NULL) AS next_booking_at`,
         [now.toISOString(), tz],
       );
@@ -65,10 +75,8 @@ export class BridgeService {
       await this.snapshotPulse(tx, pulse.score, pulse.sentence, s);
 
       const cards = await this.cards(tx, names);
-      const feedRows = await tx.q(
-        `SELECT id, agent_key, event_type, sentence, at, entity_type, entity_id, value_amount FROM feed_events ORDER BY at DESC LIMIT 40`,
-      );
-      const feedItems: FeedItem[] = feedRows.map((r) => ({
+      const feedRows = await tx.q(`SELECT id, agent_key, event_type, sentence, at, entity_type, entity_id, value_amount, channel FROM feed_events ORDER BY at DESC LIMIT 40`);
+      const feedItems: (FeedItem & { channel: string | null })[] = feedRows.map((r) => ({
         id: r.id,
         agent: r.agent_key,
         type: r.event_type,
@@ -77,16 +85,26 @@ export class BridgeService {
         entityType: r.entity_type,
         entityId: r.entity_id,
         valueAmount: num(r.value_amount),
+        channel: r.channel,
       }));
+
+      // What the Crew is doing right now (drives agent pings and the live ticker).
+      const running = await tx.q(
+        `SELECT id, agent_key, activity, started_at FROM tasks WHERE status = 'running' AND activity IS NOT NULL AND started_at > $1::timestamptz - interval '10 minutes' ORDER BY started_at DESC LIMIT 6`,
+        [now.toISOString()],
+      );
+      const working = new Set(running.map((r) => r.agent_key));
+      const ticker = running.length
+        ? running.map((r) => ({ agent: r.agent_key, name: names[r.agent_key] ?? r.agent_key, sentence: withAgent(r.activity, names[r.agent_key]), live: true }))
+        : feedItems.slice(0, 1).map((f) => ({ agent: f.agent, name: names[f.agent] ?? f.agent, sentence: f.sentence, live: false }));
 
       const earningsRows = await tx.q(
         `SELECT agent_key, COALESCE(sum(value_amount), 0) AS value, COALESCE(sum(minutes_saved), 0) AS minutes
-         FROM feed_events
-         WHERE at >= (date_trunc('month', $1::timestamptz AT TIME ZONE $2) AT TIME ZONE $2)
-         GROUP BY agent_key`,
+         FROM feed_events WHERE at >= (date_trunc('month', $1::timestamptz AT TIME ZONE $2) AT TIME ZONE $2) GROUP BY agent_key`,
         [now.toISOString(), tz],
       );
       const byAgent = earningsRows
+        .filter((r) => r.agent_key !== 'orbit')
         .map((r) => ({ agent: r.agent_key, name: names[r.agent_key] ?? r.agent_key, value: num(r.value), minutes: num(r.minutes) }))
         .filter((r) => r.value > 0 || r.minutes > 0)
         .sort((a, b) => b.value - a.value);
@@ -94,7 +112,7 @@ export class BridgeService {
       const cur = biz.currency;
       const money = (n: number) => `~m:${cur}:${n}`;
       const briefing: Sentence[] =
-        mode === 'morning'
+        briefingType === 'morning'
           ? [
               { key: 'brief.bookings_today', params: { count: num(s.bookings_today) } },
               ...(s.next_booking_at ? [{ key: 'brief.next_booking', params: { time: `~t:${new Date(s.next_booking_at).toISOString()}` } }] : []),
@@ -111,21 +129,19 @@ export class BridgeService {
 
       return {
         business: { id: biz.id, name: biz.name, slug: biz.slug, timezone: tz, currency: cur, status: biz.status },
-        mode,
-        pulse: { ...pulse, numbers: { moneyToday: num(s.money_today), bookingsToday: num(s.bookings_today), peopleWaiting: num(s.people_waiting) } },
+        owner: { firstName: (owner?.name ?? '').split(' ')[0] || null },
+        now: now.toISOString(),
+        dayPart: part,
+        mode: briefingType,
+        isNew: num(s.crew_events) === 0 && !hasHistory && num(s.bookings_today) === 0,
+        pulse: { ...pulse, numbers: { moneyToday: num(s.money_today), bookingsToday: num(s.bookings_today), needYou: cards.length, peopleWaiting: num(s.people_waiting) } },
         briefing,
         needsYou: cards,
-        feed: groupFeed(feedItems, names),
-        earnings: {
-          total: byAgent.reduce((a, r) => a + r.value, 0),
-          minutesSaved: byAgent.reduce((a, r) => a + r.minutes, 0),
-          byAgent,
-        },
-        crew: agents.map((a) => ({ agent: a.agent_key, name: a.display_name, enabled: a.enabled })),
-        suggestions:
-          mode === 'morning'
-            ? ['suggest.today_look', 'suggest.who_unpaid', 'suggest.new_customers_month']
-            : ['suggest.how_today', 'suggest.tomorrow_bookings', 'suggest.who_unpaid'],
+        feed: groupFeed(feedItems, names).map((g) => ({ ...g, channel: (g.items[0] as any).channel ?? null })),
+        ticker,
+        earnings: { total: byAgent.reduce((a, r) => a + r.value, 0), minutesSaved: byAgent.reduce((a, r) => a + r.minutes, 0), byAgent },
+        crew: agents.map((a) => ({ agent: a.agent_key, name: a.display_name, enabled: a.enabled, working: working.has(a.agent_key) })),
+        suggestions: part === 'morning' ? ['suggest.today_look', 'suggest.who_unpaid_week', 'suggest.call_tomorrow'] : part === 'evening' ? ['suggest.how_today', 'suggest.tomorrow_bookings', 'suggest.who_unpaid_week'] : ['suggest.today_look', 'suggest.fill_slots', 'suggest.who_unpaid_week'],
       };
     });
   }
@@ -134,11 +150,11 @@ export class BridgeService {
   private async expireCards(tx: Tx) {
     const expired = await tx.q(
       `UPDATE approval_cards SET status = 'expired', decision = default_option, decided_at = now()
-       WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < now() RETURNING id, agent_key, task_id`,
+       WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < now() RETURNING id, agent_key, task_id, type, context`,
     );
     for (const c of expired) {
       if (c.task_id) await tx.q(`UPDATE tasks SET status = 'cancelled', result = '{"reason":"card_expired"}' WHERE id = $1 AND status = 'waiting_approval'`, [c.task_id]);
-      await postFeed(tx, 'orbit', 'card_expired', { key: 'feed.orbit.card_expired' }, { entityType: 'approval_card', entityId: c.id });
+      await postFeed(tx, 'orbit', 'card_expired', { key: c.type === 'handover' ? 'feed.orbit.handover_expired' : 'feed.orbit.card_expired' }, { entityType: 'approval_card', entityId: c.id });
     }
   }
 
@@ -152,6 +168,7 @@ export class BridgeService {
       agent: r.agent_key,
       agentName: names[r.agent_key] ?? r.agent_key,
       type: r.type,
+      channel: r.context?.channel ?? (Array.isArray(r.context?.channels) ? r.context.channels[0] : null),
       title: withAgent(r.title, names[r.agent_key]),
       context: r.context,
       suggestedAction: r.suggested_action,
@@ -174,19 +191,33 @@ export class BridgeService {
       const option = (card.options as { key: string; outcome: 'approved' | 'rejected' | 'edited' }[]).find((o) => o.key === optionKey);
       if (!option) throw badRequest('invalid_option', 'That choice is not available for this card.');
       await tx.q(`UPDATE approval_cards SET status = $2, decision = $3, decided_by = $4, decided_at = now() WHERE id = $1`, [cardId, option.outcome, optionKey, userId]);
+      let open: string | null = null;
+      if (card.type === 'handover' && card.context?.conversationId) {
+        // "Reply myself" takes the chat over; "Let Aria handle it" hands it back.
+        if (option.outcome === 'edited') {
+          await this.conversations.takeover(tx, card.context.conversationId, userId);
+          open = `/inbox/${card.context.conversationId}`;
+        } else await this.conversations.handback(tx, card.context.conversationId, userId);
+      } else if (card.type === 'discount' && option.outcome === 'edited' && card.context?.conversationId) {
+        open = `/inbox/${card.context.conversationId}`;
+      }
       if (card.task_id) {
         const next = option.outcome === 'approved' ? 'queued' : 'cancelled';
-        await tx.q(`UPDATE tasks SET status = $2, result = CASE WHEN $2 = 'cancelled' THEN jsonb_build_object('reason', $3::text) ELSE result END WHERE id = $1 AND status = 'waiting_approval'`, [card.task_id, next, `owner_${option.outcome}`]);
+        await tx.q(
+          `UPDATE tasks SET status = $2, result = CASE WHEN $2 = 'cancelled' THEN jsonb_build_object('reason', $3::text) ELSE result END WHERE id = $1 AND status = 'waiting_approval'`,
+          [card.task_id, next, `owner_${option.outcome}`],
+        );
       }
       const agent = await tx.one(`SELECT display_name FROM agents WHERE agent_key = $1`, [card.agent_key]);
       await postFeed(tx, 'orbit', `card_${option.outcome}`, { key: `feed.orbit.card_${option.outcome}`, params: { agent: agent?.display_name ?? card.agent_key } }, { entityType: 'approval_card', entityId: cardId });
-      return { ok: true, status: option.outcome };
+      liveToBusiness(tx, { type: 'card.decided', data: { id: cardId } });
+      return { ok: true, status: option.outcome, open };
     }, userId);
   }
 
   /**
-   * Command Bar. Phase 1 records the owner's request as an Orbit task; understanding
-   * and planning (section 16) arrive with the AI layer in Phase 2.
+   * Command Bar. Records the owner's request as an Orbit task; full understanding
+   * and planning across the Crew (spec section 16) arrives in Phase 5.
    * Only the signed-in owner/staff can reach this route — never customer content.
    */
   async command(businessId: string, userId: string, text: string) {

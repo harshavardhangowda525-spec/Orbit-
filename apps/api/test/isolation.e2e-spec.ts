@@ -12,7 +12,7 @@ import { bootApp, onboard, signIn, api, appDb, asTenant } from './helpers';
 
 type Biz = Awaited<ReturnType<typeof onboard>> & { customerId: string; conversationId: string; bookingId: string; taskId: string; cardId: string; feedId: string };
 
-const PLATFORM_TABLES_WITH_BUSINESS_ID = ['memberships', 'audit_log'];
+const PLATFORM_TABLES_WITH_BUSINESS_ID = ['memberships', 'audit_log', 'oauth_states'];
 
 describe('data isolation between businesses', () => {
   let app: NestExpressApplication;

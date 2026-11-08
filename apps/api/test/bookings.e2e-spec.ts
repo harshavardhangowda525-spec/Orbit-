@@ -29,6 +29,7 @@ describe('double booking protection', () => {
     );
     await Promise.all(clients.map((c) => c.query('ROLLBACK').catch(() => undefined).then(() => c.end())));
     const ok = results.filter((r) => r.status === 'fulfilled').length;
+    if (process.env.DEBUG_RACE) console.log(results.map((r: any) => String(r.reason ?? 'ok')));
     expect(ok).toBe(1);
     expect(results.filter((r) => r.status === 'rejected').every((r: any) => /conflicting key value|exclusion/.test(String(r.reason)))).toBe(true);
   });

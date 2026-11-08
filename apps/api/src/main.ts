@@ -2,11 +2,17 @@ import 'reflect-metadata';
 import { createApp } from './app.factory';
 import { config } from './config';
 import { logger } from './logger';
+import { attachWebSockets } from './realtime/ws.gateway';
+import { JobsService } from './jobs/jobs.service';
 
 async function main() {
   const app = await createApp();
   app.enableShutdownHooks();
   await app.listen(config.port);
+  attachWebSockets(app, app.getHttpServer());
+  if (process.env.JOBS_ENABLED !== 'false') {
+    await app.get(JobsService).start([{ name: 'briefing.sweep', everyMs: 15 * 60_000 }, { name: 'powers.gmail_poll', everyMs: 5 * 60_000 }]);
+  }
   logger.log(`Orbit API listening on :${config.port}`, 'Main');
 }
 

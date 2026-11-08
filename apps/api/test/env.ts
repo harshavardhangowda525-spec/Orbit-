@@ -9,3 +9,4 @@ process.env.THROTTLE_DISABLED = 'true';
 process.env.LOG_SILENT = 'true';
 process.env.PLATFORM_ADMIN_PHONES = '+919800000000';
 process.env.PUBLIC_BASE_URL = 'https://orbit.test';
+process.env.AI_PROVIDER = 'fake';

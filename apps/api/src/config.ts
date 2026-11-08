@@ -39,3 +39,20 @@ export const config = {
 if (config.env === 'production' && config.jwtSecret.startsWith('dev-only')) {
   throw new Error('JWT_SECRET must be set in production');
 }
+
+export const runtime = {
+  redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  /** "bullmq" runs background jobs on Redis; "inline" keeps them in memory (tests). */
+  jobsMode: (process.env.JOBS_MODE ?? (process.env.NODE_ENV === 'test' ? 'inline' : 'bullmq')) as 'bullmq' | 'inline',
+  /** "redis" fans live updates out across API instances; "local" is single-process (tests). */
+  realtimeMode: (process.env.REALTIME_MODE ?? (process.env.NODE_ENV === 'test' ? 'local' : 'redis')) as 'redis' | 'local',
+  aiProvider: (process.env.AI_PROVIDER ?? 'claude') as 'claude' | 'fake',
+  aiModel: process.env.AI_MODEL ?? 'claude-opus-5-5',
+  /** 32-byte key (base64) for encrypting Power tokens. */
+  powersKey: process.env.POWERS_ENCRYPTION_KEY ?? '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI ?? 'http://localhost:4000/powers/oauth/callback',
+  webBaseUrl: (process.env.WEB_BASE_URL ?? process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
+  /** Development: messages to channels that are not connected are recorded as sent (not delivered). */
+  devDeliver: process.env.DEV_DELIVER === 'true',
+};

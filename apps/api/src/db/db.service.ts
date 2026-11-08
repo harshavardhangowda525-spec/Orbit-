@@ -5,7 +5,12 @@ import { currentContext } from '../context';
 
 /** A transaction handle. All queries run on the same connection. */
 export class Tx {
-  constructor(private readonly client: PoolClient) {}
+  /** Callbacks run only after a successful COMMIT (e.g. live updates). */
+  readonly after: (() => void)[] = [];
+  constructor(private readonly client: PoolClient, readonly businessId?: string) {}
+  afterCommit(fn: () => void) {
+    this.after.push(fn);
+  }
   async q<T extends QueryResultRow = any>(sql: string, params: unknown[] = []): Promise<T[]> {
     return (await this.client.query<T>(sql, params)).rows;
   }
@@ -55,7 +60,7 @@ export class DbService implements OnModuleDestroy {
     return this.run(this.app, async (tx) => {
       await tx.q(`SELECT set_config('app.business_id', $1, true), set_config('app.user_id', $2, true)`, [businessId, userId ?? '']);
       return fn(tx);
-    });
+    }, businessId);
   }
 
   /** Platform admin queries across businesses (BYPASSRLS role). Never use for owner-facing routes. */
@@ -63,12 +68,20 @@ export class DbService implements OnModuleDestroy {
     return this.run(this.admin, fn);
   }
 
-  private async run<T>(pool: Pool, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  private async run<T>(pool: Pool, fn: (tx: Tx) => Promise<T>, businessId?: string): Promise<T> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const result = await fn(new Tx(client));
+      const tx = new Tx(client, businessId);
+      const result = await fn(tx);
       await client.query('COMMIT');
+      for (const f of tx.after) {
+        try {
+          f();
+        } catch {
+          /* live updates are best-effort */
+        }
+      }
       return result;
     } catch (e) {
       await client.query('ROLLBACK').catch(() => undefined);

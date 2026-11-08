@@ -11,6 +11,13 @@ import { BridgeModule } from './bridge/bridge.module';
 import { PublicModule } from './public/public.controller';
 import { RecordsModule } from './records/records.controller';
 import { AdminModule } from './admin/admin.controller';
+import { RealtimeModule } from './realtime/realtime.service';
+import { JobsModule } from './jobs/jobs.service';
+import { ChannelsModule } from './channels/channels.service';
+import { BookingsModule } from './bookings/bookings.module';
+import { AiModule } from './ai/ai.module';
+import { KnowledgeModule } from './knowledge/knowledge.service';
+import { BriefingModule } from './briefing/briefing.service';
 
 @Controller()
 class HealthController {
@@ -25,6 +32,13 @@ class HealthController {
   imports: [
     ThrottlerModule.forRoot({ throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }], skipIf: () => process.env.THROTTLE_DISABLED === 'true' }),
     DbModule,
+    RealtimeModule,
+    JobsModule,
+    ChannelsModule,
+    BookingsModule,
+    KnowledgeModule,
+    AiModule,
+    BriefingModule,
     AuditModule,
     AuthModule,
     TemplatesModule,

@@ -51,6 +51,7 @@ const reminders = (ownerAgent: AgentKey = 'nudge'): SequenceDef => ({
   ],
 });
 
+
 const leadFollowUp: SequenceDef = {
   name: 'Lead follow-up',
   trigger: 'lead_created',
@@ -101,6 +102,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
       { question: 'Do I need an appointment?', answer: 'Appointments are recommended so you do not have to wait. Walk-ins are seen when the doctor is free.' },
     ]),
     sequences: [
+      leadFollowUp,
       reminders(),
       { name: 'Follow-up visit reminder', trigger: 'renewal_due', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Hi {{name}}, the doctor asked to see you for a follow-up around now. Shall I book a time?' }] },
       { name: 'Feedback after visit', trigger: 'booking_completed', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 24 * 60, template: 'Hi {{name}}, how are you feeling after your visit to {{business}}? Reply anytime if you need us.' }] },
@@ -125,6 +127,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     hours: weekHours([range('10:00', '14:00'), range('16:00', '20:30')]),
     faqs: commonFaqs([{ question: 'Does a check-up hurt?', answer: 'A check-up is a quick, painless look at your teeth and gums. The dentist will explain anything else before doing it.' }]),
     sequences: [
+      leadFollowUp,
       reminders(),
       { name: 'Six-month check-up', trigger: 'renewal_due', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Hi {{name}}, it has been about 6 months since your last dental check-up. Shall I book your next one?' }] },
       reviewRequest,
@@ -147,6 +150,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     hours: weekHours([range('10:00', '21:00')], [range('10:00', '18:00')]),
     faqs: commonFaqs([{ question: 'Do you take walk-ins?', answer: 'Yes, if a stylist is free. Booking ahead means no waiting.' }]),
     sequences: [
+      leadFollowUp,
       reminders(),
       { name: 'Rebooking nudge', trigger: 'renewal_due', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Hi {{name}}, it has been a few weeks since your {{service}}. Want me to book your next visit?' }] },
       { name: 'Birthday offer', trigger: 'birthday', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Happy birthday {{name}}! Enjoy a special treat on your next visit to {{business}} this month.' }] },
@@ -168,7 +172,8 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     ],
     hours: weekHours([range('10:00', '21:00')], [range('10:00', '21:00')]),
     faqs: commonFaqs([{ question: 'What should I bring?', answer: 'Nothing at all. We provide towels, robes and everything you need.' }]),
-    sequences: [reminders(), reviewRequest, { name: 'Birthday offer', trigger: 'birthday', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Happy birthday {{name}}! Treat yourself to a relaxing visit at {{business}} this month.' }] }],
+    sequences: [
+      leadFollowUp,reminders(), reviewRequest, { name: 'Birthday offer', trigger: 'birthday', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Happy birthday {{name}}! Treat yourself to a relaxing visit at {{business}} this month.' }] }],
     qualifyingQuestions: ['Which treatment are you interested in?', 'Do you prefer a male or female therapist?', 'Is this your first visit?'],
     ariaRules: [],
     agentSettings: crewDefaults,
@@ -187,6 +192,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     hours: weekHours([range('05:30', '22:00')], [range('06:00', '12:00')]),
     faqs: commonFaqs([{ question: 'Do you have a trainer?', answer: 'Yes, floor trainers are available during all hours. Personal training can be booked separately.' }]),
     sequences: [
+      leadFollowUp,
       { name: 'Trial follow-up', trigger: 'booking_completed', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 6 * 60, template: 'Hi {{name}}, great to have you at {{business}} today! Ready to start your membership?', condition: 'service_category=Trial' }] },
       { name: 'Renewal reminders', trigger: 'renewal_due', ownerAgent: 'nudge', steps: [
         { channel: 'whatsapp', delayMin: -7 * 24 * 60, template: 'Hi {{name}}, your membership at {{business}} ends in 7 days. Shall I send a renewal link?' },
@@ -211,6 +217,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     hours: weekHours([range('06:00', '10:00'), range('17:00', '20:30')], [range('07:00', '09:00')]),
     faqs: commonFaqs([{ question: 'I am a beginner. Can I join?', answer: 'Of course! Our classes welcome beginners. Tell the teacher it is your first class.' }]),
     sequences: [
+      leadFollowUp,
       { name: 'Trial follow-up', trigger: 'booking_completed', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 6 * 60, template: 'Hi {{name}}, lovely to have you in class today! Would you like to join for the month?', condition: 'service_category=Trial' }] },
       { name: 'Renewal reminders', trigger: 'renewal_due', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: -7 * 24 * 60, template: 'Hi {{name}}, your membership ends in 7 days. Shall I send a renewal link?' }, { channel: 'whatsapp', delayMin: -2 * 24 * 60, template: 'Hi {{name}}, your membership ends in 2 days.' }] },
       { name: 'Win-back', trigger: 'inactive_days', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 14 * 24 * 60, template: 'Hi {{name}}, your mat misses you! Join a class at {{business}} this week.' }] },
@@ -251,6 +258,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     hours: weekHours([range('15:00', '20:00')], [range('09:00', '12:00')]),
     faqs: commonFaqs([{ question: 'Which boards do you teach?', answer: 'Please tell us the board and class, and we will confirm the right batch for you.' }]),
     sequences: [
+      leadFollowUp,
       { name: 'Demo follow-up', trigger: 'booking_completed', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 6 * 60, template: 'Hi {{name}}, thank you for the demo class. Shall we reserve a seat in the batch?', condition: 'service_category=Demo' }] },
       { name: 'Fee reminders', trigger: 'renewal_due', ownerAgent: 'ledger', steps: [{ channel: 'whatsapp', delayMin: -3 * 24 * 60, template: 'Hi {{name}}, a reminder that the tuition fee is due on {{due_date}}.' }] },
       { name: 'Parent update', trigger: 'manual', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Hi {{name}}, here is this month’s update from {{business}}: {{note}}' }] },
@@ -273,6 +281,7 @@ export const TEMPLATES: Record<BusinessType, BusinessTemplate> = {
       { question: 'Do you deliver?', answer: 'Please ask us and we will confirm delivery options for your area.' },
     ]),
     sequences: [
+      leadFollowUp,
       { name: 'Reservation reminder', trigger: 'booking_created', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: -3 * 60, template: 'Hi {{name}}, your table at {{business}} is ready for {{time}} today. See you soon!' }] },
       { name: 'Feedback', trigger: 'booking_completed', ownerAgent: 'nudge', steps: [{ channel: 'whatsapp', delayMin: 3 * 60, template: 'Thank you for dining at {{business}}, {{name}}! How was everything? {{review_link}}' }] },
       { name: 'Festival offer', trigger: 'festival', ownerAgent: 'spark', steps: [{ channel: 'whatsapp', delayMin: 0, template: 'Happy {{festival}} from {{business}}! {{offer}}' }] },

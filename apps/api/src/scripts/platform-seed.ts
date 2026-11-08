@@ -3,7 +3,7 @@ import type { Tx } from '../db/db.service';
 
 /**
  * Base configuration every environment needs: plans and business-type templates.
- * Inserts only what is missing, so admin edits are never overwritten.
+ * Plans: inserts only what is missing. Templates: refreshed unless an admin edited them.
  */
 export async function seedPlatform(tx: Tx) {
   for (const p of DEFAULT_PLANS) {
@@ -13,6 +13,11 @@ export async function seedPlatform(tx: Tx) {
     );
   }
   for (const t of Object.values(TEMPLATES)) {
-    await tx.q(`INSERT INTO business_templates (type, content) VALUES ($1, $2) ON CONFLICT (type) DO NOTHING`, [t.type, JSON.stringify(t)]);
+    // Templates an admin never edited follow the latest built-in version; edited ones are left alone.
+    await tx.q(
+      `INSERT INTO business_templates (type, content) VALUES ($1, $2)
+       ON CONFLICT (type) DO UPDATE SET content = EXCLUDED.content WHERE business_templates.updated_by IS NULL`,
+      [t.type, JSON.stringify(t)],
+    );
   }
 }

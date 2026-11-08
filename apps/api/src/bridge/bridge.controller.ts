@@ -15,7 +15,7 @@ export class BridgeController {
 
   @Get()
   home(@CurrentTenant() t: Tenant) {
-    return this.bridge.home(t.businessId);
+    return this.bridge.home(t.businessId, new Date(), undefined, t.userId);
   }
 
   @Roles('owner', 'manager')

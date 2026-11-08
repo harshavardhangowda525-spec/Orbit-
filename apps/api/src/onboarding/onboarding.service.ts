@@ -43,13 +43,24 @@ export class OnboardingService {
     return this.db.tx(async (tx) => {
       const plan = await tx.one<{ id: string; features: PlanFeatures }>(`SELECT id, features FROM plans WHERE code = 'free'`);
       if (!plan) throw new Error('Plans are not seeded. Run npm run db:migrate.');
-      const slug = await uniqueSlug(tx, template.defaultName);
       timezone = await validTimezone(tx, timezone);
-      const biz = await tx.one(
-        `INSERT INTO businesses (name, slug, type, timezone, default_language, supported_languages, plan_id, onboarding_step, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-        [template.defaultName, slug, type, timezone, language, unique(['en', language]), plan.id, STEP.IMPORT, userId],
-      );
+      // Two owners can pick the same placeholder name at the same moment: retry on a slug clash.
+      let biz: any;
+      for (let attempt = 0; !biz; attempt++) {
+        const slug = await uniqueSlug(tx, template.defaultName, undefined, attempt > 0);
+        await tx.q('SAVEPOINT slug');
+        try {
+          biz = await tx.one(
+            `INSERT INTO businesses (name, slug, type, timezone, default_language, supported_languages, plan_id, onboarding_step, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [template.defaultName, slug, type, timezone, language, unique(['en', language]), plan.id, STEP.IMPORT, userId],
+          );
+          await tx.q('RELEASE SAVEPOINT slug');
+        } catch (e: any) {
+          await tx.q('ROLLBACK TO SAVEPOINT slug');
+          if (e?.code !== '23505' || attempt >= 5) throw e;
+        }
+      }
       await tx.q(`INSERT INTO memberships (user_id, business_id, role) VALUES ($1, $2, 'owner')`, [userId, biz.id]);
       // From here on, this transaction acts for the new business only.
       await tx.q(`SELECT set_config('app.business_id', $1, true)`, [biz.id]);
@@ -139,8 +150,17 @@ export class OnboardingService {
       }
       const name = input.name.trim();
       // Keep the public link in step with the name until the business goes live.
-      const slug = biz.status === 'onboarding' && slugify(name) !== biz.slug ? await uniqueSlug(tx, name, biz.id) : biz.slug;
-      await tx.q(`UPDATE businesses SET name = $2, slug = $3 WHERE id = $1`, [businessId, name, slug]);
+      let slug = biz.status === 'onboarding' && slugify(name) !== biz.slug ? await uniqueSlug(tx, name, biz.id) : biz.slug;
+      await tx.q('SAVEPOINT rename');
+      try {
+        await tx.q(`UPDATE businesses SET name = $2, slug = $3 WHERE id = $1`, [businessId, name, slug]);
+        await tx.q('RELEASE SAVEPOINT rename');
+      } catch (e: any) {
+        await tx.q('ROLLBACK TO SAVEPOINT rename');
+        if (e?.code !== '23505') throw e;
+        slug = await uniqueSlug(tx, name, biz.id, true);
+        await tx.q(`UPDATE businesses SET name = $2, slug = $3 WHERE id = $1`, [businessId, name, slug]);
+      }
       await tx.q(
         `UPDATE business_profiles SET phone = $1, whatsapp = COALESCE(whatsapp, $1), address = $2, description = $3, hours = $4`,
         [phone, input.address?.trim() || null, input.description?.trim() || null, JSON.stringify(input.hours)],
@@ -230,10 +250,10 @@ async function advance(tx: Tx, businessId: string, step: number) {
   await tx.q(`UPDATE businesses SET onboarding_step = GREATEST(onboarding_step, $2) WHERE id = $1 AND status = 'onboarding'`, [businessId, step]);
 }
 
-async function uniqueSlug(tx: Tx, name: string, exceptId?: string): Promise<string> {
+async function uniqueSlug(tx: Tx, name: string, exceptId?: string, forceSuffix = false): Promise<string> {
   const base = slugify(name);
   for (let i = 0; i < 6; i++) {
-    const candidate = i === 0 && !RESERVED_SLUGS.has(base) ? base : `${base}-${randomBytes(2).toString('hex')}`;
+    const candidate = i === 0 && !forceSuffix && !RESERVED_SLUGS.has(base) ? base : `${base}-${randomBytes(3).toString('hex')}`;
     const taken = await tx.one(`SELECT 1 FROM businesses WHERE slug = $1 AND ($2::uuid IS NULL OR id <> $2)`, [candidate, exceptId ?? null]);
     if (!taken) return candidate;
   }
