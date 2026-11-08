@@ -1,5 +1,7 @@
 'use client';
 
+import './space-backdrop.css';
+
 /**
  * Deep-space scene for the sign-in screen: nebula glow, twinkling stars, a
  * planet with rings and the Crew orbiting it, and the odd shooting star.
@@ -23,9 +25,9 @@ const MOONS = [
   { agent: 'spark', lap: 44, r: 70, delay: -20 },
 ];
 
-export function SpaceBackdrop() {
+export function SpaceBackdrop({ variant = 'login' }: { variant?: 'login' | 'app' }) {
   return (
-    <div className="space" aria-hidden>
+    <div className={`space ${variant === 'app' ? 'fixed dim' : ''}`} aria-hidden>
       <div className="nebula n1" />
       <div className="nebula n2" />
       <div className="nebula n3" />

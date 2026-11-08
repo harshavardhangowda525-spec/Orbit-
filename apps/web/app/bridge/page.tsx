@@ -15,12 +15,13 @@ import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from
 import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
 import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
 import { CrewView, PeopleView, PowersView, DetailsView, ComingView } from '@/components/Views';
+import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 
 import { VIEWS, type BridgeData, type View } from '@/lib/bridge-types';
 
 export default function BridgePage() {
   return (
-    <Suspense fallback={<main className="br"><Skeleton /></main>}>
+    <Suspense fallback={<main className="br space-theme"><SpaceBackdrop variant="app" /><Skeleton /></main>}>
       <Bridge />
     </Suspense>
   );
@@ -102,7 +103,8 @@ function Bridge() {
   );
 
   return (
-    <main className={`br ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <main className={`br space-theme ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <SpaceBackdrop variant="app" />
       <Header
         dayName={dayName}
         business={data?.business.name ?? business?.name ?? ''}

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
+import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 import { useSession } from '@/lib/session';
 import { useRouter } from 'next/navigation';
 import { useLive, ownerLiveQuery } from '@/lib/live';
@@ -53,7 +54,8 @@ export default function Conversation() {
   const fmt = (iso: string) => new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 
   return (
-    <main className="page" style={{ paddingBottom: 120 }}>
+    <main className="page space-theme" style={{ paddingBottom: 120 }}>
+      <SpaceBackdrop variant="app" />
       <div className="topbar">
         <Link className="chip" href="/inbox">← {t('inbox.title')}</Link>
         <div className="name">{c?.name ?? t('details.visitor')}</div>

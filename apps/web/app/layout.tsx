@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import './space-theme.css';
 import { Providers } from './providers';
 
 // Self-hosted at build time (no request to Google from the customer's phone).
@@ -19,8 +20,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f6f5fb' },
-    { media: '(prefers-color-scheme: dark)', color: '#12112a' },
+    { media: '(prefers-color-scheme: light)', color: '#0b0a26' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0a26' },
   ],
 };
 

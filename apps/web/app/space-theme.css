@@ -1,0 +1,130 @@
+/*
+ * Space theme for the owner app (The Bridge, its views, inbox, onboarding).
+ * Same layout and motion as the approved design; colours move onto a dark sky
+ * and cards become liquid glass. Heavy blur is kept to a few large surfaces so
+ * cheap phones stay smooth; small rows use plain translucency.
+ */
+.space-theme {
+  --bg: transparent;
+  --surface: rgba(255, 255, 255, 0.08);
+  --ink: #ffffff;
+  --muted: rgba(230, 227, 255, 0.72);
+  --border: rgba(255, 255, 255, 0.18);
+  --soft: rgba(255, 255, 255, 0.08);
+  --stack-back: rgba(255, 255, 255, 0.07);
+  --success-bg: rgba(94, 224, 181, 0.14);
+  --success-ink: #c9f5e6;
+  --attn-bg: rgba(255, 154, 122, 0.2);
+  --attn-ink: #ffd9cc;
+  --earnings: rgba(8, 7, 26, 0.55);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 16px 50px rgba(0, 0, 0, 0.45);
+  --shadow-bar: 0 16px 50px rgba(0, 0, 0, 0.55);
+  --glass: linear-gradient(145deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.08) 100%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  color: #fff;
+  color-scheme: dark;
+  position: relative;
+  min-height: 100dvh;
+}
+body:has(.space-theme) { background: #05040f; }
+.space-theme > :not(.space) { position: relative; z-index: 1; }
+
+/* Liquid glass: the big surfaces get real blur plus a light catch on the top edge. */
+.space-theme .card,
+.space-theme .decision,
+.space-theme .hero-card,
+.space-theme .earn,
+.space-theme .briefing,
+.space-theme .crew-card2,
+.space-theme .clear,
+.space-theme .cmd form,
+.space-theme .switcher,
+.space-theme .notes {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--glass-edge), var(--shadow);
+}
+.space-theme .hero-card {
+  background: linear-gradient(150deg, rgba(122, 104, 255, 0.38) 0%, rgba(36, 32, 94, 0.55) 55%, rgba(20, 18, 60, 0.6) 100%);
+  box-shadow: var(--glass-edge), 0 20px 60px rgba(40, 30, 140, 0.45);
+}
+.space-theme .earn { background: linear-gradient(150deg, rgba(255, 255, 255, 0.1), rgba(8, 7, 26, 0.6)); }
+.space-theme .clear { background: linear-gradient(150deg, rgba(94, 224, 181, 0.2), rgba(94, 224, 181, 0.06)); }
+.space-theme .notes { background: rgba(20, 18, 52, 0.92); }
+.space-theme .cmd form { background: linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07)); }
+.space-theme .cmd input { color: #fff; }
+.space-theme .cmd input::placeholder { color: rgba(230, 227, 255, 0.65); }
+.space-theme .cmd .send { background: #fff; color: #1c1a3a; }
+.space-theme .cmd .reply { background: rgba(20, 18, 52, 0.92); border: 1px solid rgba(255, 255, 255, 0.2); }
+
+/* Smaller surfaces: translucent, no blur. */
+.space-theme .tile,
+.space-theme .feed2 li > .rowbtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.space-theme .tile.attn { background: rgba(255, 154, 122, 0.22); border-color: rgba(255, 154, 122, 0.45); }
+.space-theme .tile.attn b, .space-theme .tile.attn span { color: #ffd9cc; }
+@media (hover: hover) {
+  .space-theme .feed2 li > .rowbtn:hover, .space-theme .tile:hover { background: rgba(255, 255, 255, 0.12); }
+}
+
+/* Switcher, chips, buttons, inputs. */
+.space-theme .switcher button { color: rgba(230, 227, 255, 0.75); }
+.space-theme .switcher button[aria-current='true'], .space-theme .views button[aria-current='true'] { background: #fff; color: #1c1a3a; border-color: #fff; }
+.space-theme .chip, .space-theme .bell, .space-theme .btn:not(.primary), .space-theme .icon-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.space-theme .bell .dot { border-color: #1c1a3a; }
+.space-theme .btn.primary { background: linear-gradient(135deg, #7a68ff 0%, #5b4ce0 60%, #4a3bc4 100%); border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 8px 24px rgba(91, 76, 224, 0.5); }
+.space-theme .input, .space-theme input[type='time'], .space-theme textarea.input {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+.space-theme .input::placeholder { color: rgba(230, 227, 255, 0.55); }
+.space-theme .input:focus { border-color: #a99bff; box-shadow: 0 0 0 4px rgba(169, 155, 255, 0.25); }
+.space-theme select option { color: #1c1a3a; }
+.space-theme .link-btn { color: #c9c4ff; }
+.space-theme a { color: #c9c4ff; }
+.space-theme .note { background: rgba(169, 155, 255, 0.14); border: 1px solid rgba(169, 155, 255, 0.3); }
+.space-theme .error { background: rgba(255, 154, 122, 0.18); border: 1px solid rgba(255, 154, 122, 0.4); color: #ffd9cc; }
+.space-theme .decision .preview, .space-theme .decision .audience span { background: rgba(255, 255, 255, 0.08); }
+.space-theme .list-item, .space-theme .day, .space-theme .check { border-color: rgba(255, 255, 255, 0.12); }
+.space-theme .status-pill.working i { box-shadow: 0 0 8px #5ee0b5; }
+.space-theme .crew-card2.sel { border-color: #a99bff; }
+
+/* Onboarding pieces. */
+.space-theme .type-btn { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: #fff; }
+.space-theme .type-btn[aria-pressed='true'] { background: rgba(122, 104, 255, 0.3); border-color: #a99bff; }
+.space-theme .progress { background: rgba(255, 255, 255, 0.12); }
+.space-theme .progress > div { background: linear-gradient(90deg, #5ee0b5, #a99bff); }
+.space-theme .switch { background: rgba(255, 255, 255, 0.2); }
+.space-theme .code-box { background: rgba(255, 255, 255, 0.08); }
+
+/* Inbox chat bubbles. */
+.space-theme .bubble.out { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.12); }
+
+/* Skeletons on a dark sky. */
+.space-theme .sk { background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 100%); background-size: 200% 100%; }
+
+/* Without backdrop blur (older browsers): solid enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .space-theme .card, .space-theme .decision, .space-theme .hero-card, .space-theme .earn, .space-theme .briefing,
+  .space-theme .crew-card2, .space-theme .clear, .space-theme .cmd form, .space-theme .switcher { background: rgba(28, 26, 64, 0.92); }
+}
+
+/* Header logo glows on the dark sky. */
+.space-theme .logo .core { background: radial-gradient(circle at 35% 30%, #c9c4ff, #5b4ce0 60%, #24205e); box-shadow: 0 0 14px rgba(169, 155, 255, 0.7); }
+.space-theme .logo .ring { border-color: rgba(255, 255, 255, 0.35); opacity: 1; }
+.space-theme .logo .spin i { box-shadow: 0 0 8px #5ee0b5; }
+
+/* The floating command bar sits over scrolling content: denser glass so text behind it never shows through. */
+.space-theme .cmd form { background: linear-gradient(145deg, rgba(70, 60, 170, 0.88), rgba(24, 21, 66, 0.92)); }
+@media (min-width: 1024px) { .space-theme .cmd form { background: linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07)); } }

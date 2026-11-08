@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
+import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 import { useLive, ownerLiveQuery } from '@/lib/live';
 import { useSession } from '@/lib/session';
 import { useRouter } from 'next/navigation';
@@ -34,7 +35,8 @@ export default function Inbox() {
   }, [load]);
   useLive(ready ? ownerLiveQuery() : null, (e) => (e.type === 'message.new' || e.type === 'conversation.updated') && load());
   return (
-    <main className="page">
+    <main className="page space-theme">
+      <SpaceBackdrop variant="app" />
       <div className="topbar">
         <Link className="chip" href="/bridge">← {t('view.today')}</Link>
         <div className="name">{t('inbox.title')}</div>

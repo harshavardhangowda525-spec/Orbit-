@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { LiveLinks, Checklist } from '@/components/LiveLinks';
+import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 
 type Step = 'type' | 'import' | 'name' | 'services' | 'hours' | 'staff' | 'calendar' | 'live';
 const STEPS: Step[] = ['type', 'import', 'name', 'services', 'hours', 'staff', 'calendar', 'live'];
@@ -114,14 +115,16 @@ export default function Onboarding() {
 
   if (!step) {
     return (
-      <main className="page center">
+      <main className="page center space-theme">
+        <SpaceBackdrop variant="app" />
         <p className="muted">{error ?? t('common.loading')}</p>
       </main>
     );
   }
 
   return (
-    <main className="page">
+    <main className="page space-theme">
+      <SpaceBackdrop variant="app" />
       <div className="ob-top">
         {back ? (
           <button className="icon-btn" aria-label={t('common.back')} onClick={back}>
