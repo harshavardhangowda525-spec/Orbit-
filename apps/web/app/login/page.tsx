@@ -57,6 +57,25 @@ export default function Login() {
     if (!loading && me && mode !== 'reset') router.replace(homeFor(me));
   }, [loading, me, mode, router]);
 
+  // Back from Google (or an email link) with a Supabase session, but Orbit did not accept it: show why instead of a silent loop.
+  useEffect(() => {
+    if (loading || me || mode === 'reset' || !sb) return;
+    let gone = false;
+    sb.auth.getSession().then(async ({ data }) => {
+      if (gone || !data.session) return;
+      session.setToken(data.session.access_token);
+      try {
+        await api('/auth/me', { business: false });
+        await signIn(data.session.access_token).then((m) => m && router.replace(homeFor(m)));
+      } catch (err) {
+        if (!gone) setError((err as ApiError).message);
+      }
+    });
+    return () => {
+      gone = true;
+    };
+  }, [loading, me, mode, sb, signIn, router]);
+
   function switchTo(m: Mode) {
     setMode(m);
     setError(null);

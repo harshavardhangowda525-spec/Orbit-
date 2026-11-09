@@ -8,6 +8,17 @@ import { SupabaseVerifier } from './supabase';
 import { AuthService } from './auth.service';
 import { auth } from '../config';
 import { AppError, forbidden } from '../common/errors';
+import { logger } from '../logger';
+
+/** The token's issuer, without verifying it (only used to explain a rejection). */
+function tokenIssuer(token: string): string | null {
+  try {
+    const iss = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'))?.iss;
+    return typeof iss === 'string' ? iss : null;
+  } catch {
+    return null;
+  }
+}
 import { currentContext } from '../context';
 import type { JwtPayload, Tenant } from './types';
 
@@ -29,6 +40,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private cache = new Map<string, { userId: string; at: number }>();
+  private warned = new Set<string>();
   constructor(
     private readonly reflector: Reflector,
     private readonly jwt: JwtService,
@@ -53,6 +65,20 @@ export class JwtAuthGuard implements CanActivate {
 
   /** Token -> user, shared with the WebSocket gateway. */
   async resolve(token: string, explain = false): Promise<{ id: string; impersonation?: { adminId: string; businessId: string } } | null> {
+    // A Supabase token the server is not set up to accept: say which setting is wrong (once per issuer in the log).
+    const iss = tokenIssuer(token);
+    if (iss?.endsWith('.supabase.co/auth/v1') && !(auth.provider === 'supabase' && this.supabase.looksLikeSupabase(token))) {
+      const why =
+        auth.provider !== 'supabase'
+          ? 'AUTH_PROVIDER on orbit-api must be "supabase"'
+          : `SUPABASE_URL on orbit-api is "${auth.supabaseUrl || '(not set)'}" but this sign-in came from ${iss.replace(/\/auth\/v1$/, '')}`;
+      if (!this.warned.has(why)) {
+        this.warned.add(why);
+        logger.warn(`Rejected a Supabase sign-in: ${why}`, 'Auth');
+      }
+      if (explain) throw new AppError(401, 'auth_not_configured', `Orbit's server is not set up for this sign-in yet: ${why}.`);
+      return null;
+    }
     if (auth.provider === 'supabase' && this.supabase.looksLikeSupabase(token)) {
       try {
         const claims = await this.supabase.verify(token);
@@ -65,6 +91,7 @@ export class JwtAuthGuard implements CanActivate {
       } catch (e) {
         // A known reason (e.g. email not confirmed yet) is shown to the person; anything else is just "sign in again".
         if (explain && e instanceof AppError && e.getStatus() !== 401) throw e;
+        if (!(e instanceof AppError)) logger.warn(`Supabase sign-in rejected: ${(e as Error).message}`, 'Auth');
         return null;
       }
     }
