@@ -32,6 +32,13 @@ export default function Login() {
   const [sb, setSb] = useState<ReturnType<typeof getSupabase>>(null);
   useEffect(() => setSb(getSupabase()), []);
   const showGoogle = !!sb && publicEnv('AUTH_GOOGLE') !== 'false';
+  // On a hosted site, sign-in needs Supabase and the API address; say which setting is missing instead of failing later.
+  const [setupProblem, setSetupProblem] = useState<string | null>(null);
+  useEffect(() => {
+    if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) return;
+    const missing = [!publicEnv('SUPABASE_URL') && 'SUPABASE_URL', !publicEnv('SUPABASE_ANON_KEY') && 'SUPABASE_ANON_KEY', !publicEnv('API_URL') && 'ORBIT_API_URL'].filter(Boolean);
+    if (missing.length) setSetupProblem(`Sign-in is not set up on this site yet. Add ${missing.join(', ')} in Render (orbit-web → Environment), then redeploy.`);
+  }, []);
 
   useEffect(() => {
     if (!loading && me) router.replace(homeFor(me));
@@ -149,7 +156,7 @@ export default function Login() {
               <button className="link" onClick={() => { setSentTo(null); setCode(''); setError(null); }}>{t('login.change_email')}</button>
             </>
           )}
-          {error && <p className="msg" role="alert">{error}</p>}
+          {(error || setupProblem) && <p className="msg" role="alert">{error ?? setupProblem}</p>}
           <p className="terms">{t('login.terms')}</p>
         </section>
       </div>

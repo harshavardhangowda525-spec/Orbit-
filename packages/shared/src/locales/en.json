@@ -262,7 +262,7 @@
  "login.email_invalid": "That email address does not look right. Please check it.",
  "login.enter_code": "Enter the 6-digit code",
  "login.google": "Continue with Google",
- "login.google_failed": "Google sign-in is not available right now. Please use your phone number.",
+ "login.google_failed": "Google sign-in is not available right now. Please use your email.",
  "login.or": "or",
  "login.phone": "Mobile number",
  "login.send_code": "Email me a code",

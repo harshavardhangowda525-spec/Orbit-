@@ -60,7 +60,9 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   try {
     res = await fetch(`${apiUrl()}${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
   } catch {
-    throw new ApiError(0, 'offline', 'No internet connection. Please check your network and try again.');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new ApiError(0, 'offline', 'No internet connection. Please check your network and try again.');
+    // Online but the API did not answer: asleep (free hosting), restarting, or not set up yet.
+    throw new ApiError(0, 'unreachable', 'Orbit could not reach its server. If it was asleep, wait about a minute and try again.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

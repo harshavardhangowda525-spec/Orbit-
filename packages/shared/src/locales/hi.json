@@ -262,7 +262,7 @@
  "login.email_invalid": "यह ईमेल पता सही नहीं लगता। कृपया जाँचें।",
  "login.enter_code": "6 अंकों का कोड डालें",
  "login.google": "Google से जारी रखें",
- "login.google_failed": "Google साइन-इन अभी उपलब्ध नहीं है। कृपया अपना फ़ोन नंबर इस्तेमाल करें।",
+ "login.google_failed": "Google साइन-इन अभी उपलब्ध नहीं है। कृपया अपना ईमेल इस्तेमाल करें।",
  "login.or": "या",
  "login.phone": "मोबाइल नंबर",
  "login.send_code": "मुझे ईमेल पर कोड भेजें",
