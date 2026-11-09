@@ -57,7 +57,7 @@ export default function Login() {
     setError(null);
     try {
       if (sb) {
-        const { error: e2 } = await sb.auth.signInWithOtp({ email: addr, options: { shouldCreateUser: true } });
+        const { error: e2 } = await sb.auth.signInWithOtp({ email: addr, options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}/login` } });
         if (e2) throw new Error(e2.status === 429 ? t('login.wait_minute') : t('login.email_failed'));
         setDevCode(null);
       } else {
