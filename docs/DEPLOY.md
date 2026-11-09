@@ -137,7 +137,6 @@ If you skip this, set `AUTH_GOOGLE=false` on the web service in Part B. That hid
 | `PUBLIC_BASE_URL` | `https://orbit-web.onrender.com` |
 | `WEB_BASE_URL` | `https://orbit-web.onrender.com` |
 | `PLATFORM_ADMIN_EMAILS` | your email address (people here get the admin panel) |
-| `SEED_OWNER_EMAIL` | your email address (you sign in as Meera, the Glow Studio demo owner) |
 
 **orbit-web:**
 
@@ -165,10 +164,9 @@ Now that you know the real orbit-web address, do step **2** of A5 (Site URL and 
 
 ### B5. Try it
 1. Open your **orbit-web** URL. The first visit after a sleep takes about a minute.
-2. Click **Start free**, open the **Sign up** tab, enter the email you put in `SEED_OWNER_EMAIL` and choose a password.
-3. Open the confirmation email and click the link, then log in. You'll land on **The Bridge** for Glow Studio as Meera.
-4. Customer page: open `https://<orbit-web>/glow-studio`. You can book there or chat with Aria.
-5. New business: sign out, then sign in with another email or with Google (if A6 is done) to set up your own business.
+2. Click **Start free**, open the **Sign up** tab, enter your email and choose a password (or use **Continue with Google**).
+3. Open the confirmation email and click the link, then log in. Orbit starts the business setup: pick your business type, add your details, and go live.
+4. Customer page: open `https://<orbit-web>/<your-business-link>`. You can book there or chat with Aria.
    - Other people's emails need Resend set up (A5, step 3).
 
 ---
@@ -180,7 +178,7 @@ Now that you know the real orbit-web address, do step **2** of A5 (Site URL and 
 | Real AI for Aria (Claude) | `AI_PROVIDER=claude` and `ANTHROPIC_API_KEY=<your key>` |
 | Real AI for Aria (Groq) | `AI_PROVIDER=groq` and `GROQ_API_KEY=<your key>`; optional `GROQ_MODEL` (default `llama-3.3-70b-versatile`) |
 | No AI key yet | `AI_PROVIDER=fake`: the offline demo brain answers from FAQs and offers real slots |
-| No demo businesses | `SEED_DEMO=false` |
+| Demo businesses (testing only) | `SEED_DEMO=true` adds Glow Studio and IronCore Gym with made-up owners. Leave it `false` on a real site. |
 | Google Calendar / Gmail Powers | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI=https://<orbit-api>/powers/oauth/callback` |
 
 ## If something goes wrong

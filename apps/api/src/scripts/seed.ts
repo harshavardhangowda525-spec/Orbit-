@@ -10,8 +10,8 @@ import { migrate } from './migrate';
  * Sample data: two businesses of different types with a realistic day, so
  * The Bridge, Pulse and the isolation tests have something to show.
  *   Admin:            the addresses in PLATFORM_ADMIN_EMAILS
- *   Glow Studio owner (Meera): meera@glowstudio.example, or SEED_OWNER_EMAIL  (Base plan)
- *   IronCore Gym owner:        suresh@ironcore.example, or SEED_GYM_OWNER_EMAIL  (Business plan)
+ *   Glow Studio owner (Meera): meera@glowstudio.example  (Base plan)
+ *   IronCore Gym owner:        suresh@ironcore.example  (Business plan)
  * Re-running the seed replaces these two businesses.
  */
 
@@ -46,8 +46,8 @@ const SALON: SampleBusiness = {
   name: 'Glow Studio',
   type: 'salon',
   plan: 'base',
-  // Set SEED_OWNER_EMAIL to your own address to sign in as Meera on a hosted preview.
-  ownerEmail: process.env.SEED_OWNER_EMAIL || 'meera@glowstudio.example',
+  // Always a made-up address, so demo data never attaches to a real person's account.
+  ownerEmail: 'meera@glowstudio.example',
   ownerName: 'Meera',
   city: 'Bengaluru',
   address: '12, 4th Cross, Indiranagar, Bengaluru 560038',
@@ -67,7 +67,7 @@ const GYM: SampleBusiness = {
   name: 'IronCore Gym',
   type: 'gym',
   plan: 'business',
-  ownerEmail: process.env.SEED_GYM_OWNER_EMAIL || 'suresh@ironcore.example',
+  ownerEmail: 'suresh@ironcore.example',
   ownerName: 'Suresh',
   city: 'Mysuru',
   address: '88, Kalidasa Road, VV Mohalla, Mysuru 570002',

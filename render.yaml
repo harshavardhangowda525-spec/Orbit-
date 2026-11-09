@@ -50,14 +50,13 @@ services:
         sync: false
       - key: PLATFORM_ADMIN_EMAILS
         sync: false
-      - key: SEED_OWNER_EMAIL
-        sync: false
       - key: AI_PROVIDER
         value: fake            # change to groq or claude once its key is set
       - key: GROQ_API_KEY
         sync: false
+      # Demo businesses (Glow Studio, IronCore Gym) are for local development only.
       - key: SEED_DEMO
-        value: "true"
+        value: "false"
 
   - type: web
     name: orbit-web
