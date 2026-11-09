@@ -152,6 +152,17 @@
 .cmd .mic.on { background: var(--coral); }
 .cmd .send { width: 46px; height: 46px; border-radius: 999px; border: none; background: var(--ink); color: #fff; cursor: pointer; flex: none; }
 .cmd .reply { background: var(--surface); border-radius: 18px; padding: 10px 14px; box-shadow: var(--shadow-raised); margin-bottom: 8px; font-size: 14px; display: flex; gap: 8px; align-items: flex-start; }
+.cmd .reply .asked { font-size: 12px; opacity: 0.7; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd .reply .answer { white-space: pre-line; line-height: 1.45; max-height: 40vh; overflow-y: auto; }
+.cmd .reply .thinking { opacity: 0.75; animation: cmd-pulse 1.2s ease-in-out infinite; }
+.cmd .reply .steps { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.cmd .reply .steps li { display: flex; align-items: center; gap: 8px; opacity: 0.8; animation: cmd-step-in 0.25s ease-out both; }
+.cmd .reply .steps li::before { content: ''; width: 8px; height: 8px; border-radius: 999px; background: #5ee0b5; flex: none; }
+.cmd .reply .steps li.now { opacity: 1; }
+.cmd .reply .steps li.now::before { background: #a99bff; animation: cmd-pulse 0.9s ease-in-out infinite; }
+@keyframes cmd-step-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 0.8; transform: none; } }
+@keyframes cmd-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cmd .reply .steps li, .cmd .reply .thinking, .cmd .reply .steps li.now::before { animation: none; } }
 .hint-fade { animation: fade 0.4s var(--ease); }
 
 /* ---------- Skeleton ---------- */

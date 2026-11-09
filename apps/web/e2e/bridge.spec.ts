@@ -78,3 +78,16 @@ test('desktop shows three columns with tiles inside the hero', async ({ browser 
   await expect(page.locator('.tiles.phone')).toBeHidden();
   await ctx.close();
 });
+
+test('asking Orbit shows each step, opens the screen, and answers', async ({ page }) => {
+  await signIn(page, SEED.salon);
+  const bar = page.locator('[data-testid="command-bar"]:visible');
+  await bar.getByRole('textbox').fill('show my customers');
+  await bar.getByRole('button', { name: 'Send' }).click();
+  const reply = page.locator('[data-testid="orbit-reply"]:visible');
+  await expect(reply).toContainText('Opening People');
+  await expect(reply).toContainText('Looking up customers');
+  await expect(reply).toContainText('Here are your customers');
+  // Orbit switched the screen in front of the owner, and the answer stayed on screen.
+  await expect(page.getByRole('heading', { name: 'People' })).toBeVisible();
+});

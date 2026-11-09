@@ -220,16 +220,6 @@ export class BridgeService {
    * and planning across the Crew (spec section 16) arrives in Phase 5.
    * Only the signed-in owner/staff can reach this route — never customer content.
    */
-  async command(businessId: string, userId: string, text: string) {
-    return this.db.withTenant(businessId, async (tx) => {
-      const task = await tx.one(
-        `INSERT INTO tasks (agent_key, created_by_kind, goal, inputs, status, created_by) VALUES ('orbit', 'owner', $1, $2, 'queued', $3) RETURNING id`,
-        [text, JSON.stringify({ text, via: 'command_bar' }), userId],
-      );
-      await postFeed(tx, 'orbit', 'command_received', { key: 'feed.orbit.command_received' }, { entityType: 'task', entityId: task.id });
-      return { taskId: task.id, reply: { key: 'command.received' } as Sentence };
-    }, userId);
-  }
 }
 
 /** Inject the agent's (possibly renamed) display name so sentences say "Aria" or the owner's chosen name. */

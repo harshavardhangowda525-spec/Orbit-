@@ -45,7 +45,7 @@ export const session = {
 };
 
 /** Call the Orbit API. Errors come back as ApiError with a plain-language message. */
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}): Promise<T> {
+async function authHeaders(business = true): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   // With Supabase Auth, always send a fresh access token (supabase-js refreshes it).
   if (getSupabase()) {
@@ -55,7 +55,45 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   const token = session.token();
   if (token) headers.authorization = `Bearer ${token}`;
   const biz = session.businessId();
-  if (opts.business !== false && biz) headers['x-business-id'] = biz;
+  if (business && biz) headers['x-business-id'] = biz;
+  return headers;
+}
+
+/**
+ * POST and read the answer line by line (NDJSON) as the server writes it, so the
+ * screen can show each step while it happens.
+ */
+export async function apiStream(path: string, body: unknown, onEvent: (e: any) => void): Promise<void> {
+  const headers = { ...(await authHeaders()), accept: 'application/x-ndjson' };
+  let res: Response;
+  try {
+    res = await fetch(`${apiUrl()}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError(0, 'unreachable', 'Orbit could not reach its server. If it was asleep, wait about a minute and try again.');
+  }
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.');
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) onEvent(JSON.parse(line));
+    }
+    if (done) break;
+  }
+  if (buf.trim()) onEvent(JSON.parse(buf));
+}
+
+export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}): Promise<T> {
+  const headers = await authHeaders(opts.business !== false);
   let res: Response;
   try {
     res = await fetch(`${apiUrl()}${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });

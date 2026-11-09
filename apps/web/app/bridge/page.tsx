@@ -10,7 +10,7 @@ import { useSession } from '@/lib/session';
 import { useLive, ownerLiveQuery } from '@/lib/live';
 import { useIntroOnce, usePageVisible } from '@/lib/motion';
 import { LanguagePicker } from '@/components/LanguagePicker';
-import { CommandBar } from '@/components/CommandBar';
+import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
 import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
 import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
 import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
@@ -69,6 +69,13 @@ function Bridge() {
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
   }, [visible, load]);
+
+  // Orbit (Command Bar) opening a screen in front of the owner.
+  const openScreen = useCallback((screen: OrbitScreen, id?: string) => {
+    if (screen === 'conversation' && id) router.push(`/inbox/${id}`);
+    else if (screen === 'inbox') router.push('/inbox');
+    else if ((VIEWS as readonly string[]).includes(screen)) setView(screen as View);
+  }, [router]);
 
   const openEntity = (it: { entityType: string | null; entityId: string | null }) => {
     if (it.entityType === 'conversation' && it.entityId) router.push(`/inbox/${it.entityId}`);
@@ -138,14 +145,14 @@ function Bridge() {
 
       {data && view === 'today' && (
         <Today data={data} intro={intro} running={visible} names={names} dayName={dayName} reload={load} openEntity={openEntity}
-          onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} />
+          onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} openScreen={openScreen} />
       )}
       {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} />}
       {view === 'people' && <PeopleView />}
       {view === 'powers' && <PowersView />}
       {view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}
-      {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} running={visible} /></div>}
+      {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} /></div>}
     </main>
   );
 }
@@ -199,9 +206,10 @@ function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready
   );
 }
 
-function Today({ data, intro, running, names, dayName, reload, openEntity, onAgent, onOpen }: {
+function Today({ data, intro, running, names, dayName, reload, openEntity, onAgent, onOpen, openScreen }: {
   data: BridgeData; intro: boolean; running: boolean; names: Record<string, string>; dayName: string; reload: () => void;
   openEntity: (it: { entityType: string | null; entityId: string | null }) => void; onAgent: (a: string) => void; onOpen: (href: string) => void;
+  openScreen: (screen: OrbitScreen, id?: string) => void;
 }) {
   const { t, ts } = useI18n();
   const n = data.pulse.numbers;
@@ -247,13 +255,13 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         {data.mode === 'morning' && briefing}
         {data.mode === 'evening' && briefing}
         <NeedsYou cards={data.needsYou} onDecided={reload} onOpen={onOpen} dayName={dayName} />
-        <div className="br-desktop-only" style={{ flexDirection: 'column' }}><CommandBar suggestions={data.suggestions} onDone={reload} running={running} /></div>
+        <div className="br-desktop-only" style={{ flexDirection: 'column' }}><CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} /></div>
         <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
       </div>
       <div className="br-col">
         <CrewFeed groups={data.feed} names={names} animate={intro} onOpen={openEntity} />
       </div>
-      <div className="br-phone-only"><CommandBar suggestions={data.suggestions} onDone={reload} running={running} /></div>
+      <div className="br-phone-only"><CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} /></div>
     </div>
   );
 }

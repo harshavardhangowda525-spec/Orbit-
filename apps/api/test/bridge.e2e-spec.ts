@@ -1,3 +1,5 @@
+import { AiService } from '../src/ai/ai.service';
+import { AiUnavailableError } from '../src/ai/provider';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Client } from 'pg';
 import { translate } from '@orbit/shared';
@@ -82,12 +84,37 @@ describe('The Bridge with seeded businesses', () => {
     expect(r.rows[0]).toEqual({ status: 'expired', decision: 'no', task_status: 'cancelled' });
   });
 
-  it('the Command Bar records the request as an Orbit task', async () => {
+  it('Orbit answers in the Command Bar with real data, opens screens, and logs the task', async () => {
     const owner = await signIn(app, SEED.salon);
     const a = api(app, owner.token, ids.salon);
-    const r = await a.post('/bridge/commands', { text: 'Block my calendar tomorrow afternoon' }).expect(201);
-    expect(r.body.reply.key).toBe('command.received');
+    // Demo brain (AI_PROVIDER=fake): looks up customers through the tools, opens the People screen.
+    const r = await a.post('/bridge/commands', { text: 'show my customers', language: 'en' }).expect(201);
+    expect(r.body.reply).toMatch(/^Here are your customers: /);
+    expect(r.body.actions).toEqual([{ type: 'open', screen: 'people' }]);
+    expect(r.body.steps.map((s: any) => s.key)).toEqual(['assistant.step.open_screen', 'assistant.step.find_customers']);
     const tasks = (await a.get('/tasks').expect(200)).body;
-    expect(tasks[0]).toMatchObject({ id: r.body.taskId, agent: 'orbit', goal: 'Block my calendar tomorrow afternoon', status: 'queued', createdBy: 'owner' });
+    expect(tasks[0]).toMatchObject({ id: r.body.taskId, agent: 'orbit', goal: 'show my customers', status: 'done', createdBy: 'owner' });
+
+    // Streaming: each step arrives as its own line, the answer last.
+    const stream = await a.post('/bridge/commands', { text: "today's bookings" }).set('accept', 'application/x-ndjson').expect(201);
+    expect(stream.headers['content-type']).toMatch(/application\/x-ndjson/);
+    const events = stream.text.trim().split('\n').map((l) => JSON.parse(l));
+    expect(events[0]).toEqual({ type: 'step', label: { key: 'assistant.step.todays_schedule' } });
+    expect(events[events.length - 1]).toMatchObject({ type: 'reply' });
+    expect(events[events.length - 1].text).toMatch(/booking|No bookings/);
+  });
+
+  it('Orbit says plainly when its AI cannot be reached', async () => {
+    const owner = await signIn(app, SEED.salon);
+    const fake = (app as any).get(AiService).fake;
+    fake.script = () => {
+      throw new AiUnavailableError('down');
+    };
+    try {
+      const r = await api(app, owner.token, ids.salon).post('/bridge/commands', { text: 'hi' }).expect(201);
+      expect(r.body).toMatchObject({ reply: null, error: { key: 'assistant.unavailable' } });
+    } finally {
+      fake.reset();
+    }
   });
 });

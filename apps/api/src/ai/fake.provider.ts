@@ -42,7 +42,30 @@ function lastUserText(req: AiRequest): string {
   return '';
 }
 
+/** Orbit (owner assistant) offline: picks a tool from keywords, then summarises the result plainly. */
+function orbitBrain(req: AiRequest): AiBlock[] {
+  const last = req.messages[req.messages.length - 1];
+  const results = Array.isArray(last?.content) ? (last.content as any[]).filter((b) => b.type === 'tool_result') : [];
+  if (results.length) {
+    const data = results.map((r) => JSON.parse(String(r.content ?? '{}'))).find((d) => !d.shown) ?? {};
+    if (data.bookings) return [text(data.bookings.length ? `You have ${data.count} booking${data.count === 1 ? '' : 's'}: ${data.bookings.map((b: any) => `${b.time} ${b.customer} (${b.service})`).join(', ')}.` : 'No bookings for that day yet.')];
+    if (data.customers) return [text(data.customers.length ? `Here are your customers: ${data.customers.map((c: any) => c.name ?? c.phone).join(', ')}.` : 'No customers yet.')];
+    if (data.conversations) return [text(data.conversations.length ? `${data.conversations.length} open chat${data.conversations.length === 1 ? '' : 's'}; ${data.conversations.filter((c: any) => c.waiting_for_you).length} waiting for you.` : 'No open chats right now.')];
+    if (data.revenue !== undefined) return [text(`${data.bookings ?? 0} bookings and ${data.revenue} so far (${data.period}). ${data.new_customers} new customers.`)];
+    if (data.services) return [text(`Your services: ${data.services.map((s: any) => `${s.name} (${s.price})`).join(', ')}.`)];
+    return [text('Done.')];
+  }
+  const q = lastUserText(req).toLowerCase();
+  if (/booking|schedule|appointment|today/.test(q)) return [toolUse('todays_schedule', {})];
+  if (/customer|client|people/.test(q)) return [toolUse('open_screen', { screen: 'people' }), toolUse('find_customers', {})];
+  if (/chat|inbox|message/.test(q)) return [toolUse('open_screen', { screen: 'inbox' }), toolUse('open_conversations', {})];
+  if (/how.*doing|revenue|earn|money|stats/.test(q)) return [toolUse('business_stats', { period: 'today' })];
+  if (/service|price/.test(q)) return [toolUse('open_screen', { screen: 'details' }), toolUse('list_services', {})];
+  return [text("Hi! I'm Orbit, running in demo mode without an AI key, so I can only handle a few things. Try \"today's bookings\", \"show my customers\" or \"how are we doing?\".")];
+}
+
 function demoBrain(req: AiRequest): AiBlock[] {
+  if (req.tools.some((t: any) => t.name === 'open_screen')) return orbitBrain(req);
   const last = req.messages[req.messages.length - 1];
   const results = Array.isArray(last?.content) ? (last.content as any[]).filter((b) => b.type === 'tool_result') : [];
   if (results.length) {
