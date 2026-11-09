@@ -13,6 +13,14 @@ for (const p of process.env.NODE_ENV === 'test' ? [] : [join(__dirname, '..', '.
   }
 }
 
+function toOrigin(v: string): string {
+  try {
+    return new URL(v).origin;
+  } catch {
+    return v;
+  }
+}
+
 function req(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
   if (v === undefined || v === '') throw new Error(`Missing environment variable ${name}`);
@@ -26,7 +34,8 @@ export const config = {
   databaseAdminUrl: req('DATABASE_ADMIN_URL', 'postgres://orbit_admin:orbit_admin_dev@localhost:5432/orbit'),
   databaseMigrationUrl: req('DATABASE_MIGRATION_URL', 'postgres://orbit_migrator:orbit_migrator_dev@localhost:5432/orbit'),
   jwtSecret: req('JWT_SECRET', 'dev-only-secret-change-me'),
-  webOrigins: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((s) => s.trim()),
+  // Browsers send only scheme://host[:port], so "https://x.onrender.com/" or ".../login" is trimmed to that.
+  webOrigins: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((s) => s.trim()).filter(Boolean).map(toOrigin),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
 };

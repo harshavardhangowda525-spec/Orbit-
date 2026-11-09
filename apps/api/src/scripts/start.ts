@@ -30,7 +30,8 @@ function checkUrls() {
   check('REDIS_URL', ['redis:', 'rediss:'], false);
   for (const n of ['SUPABASE_URL', 'SUPABASE_JWKS_URL', 'WEB_BASE_URL', 'PUBLIC_BASE_URL']) check(n, ['https:', 'http:'], false);
   for (const o of (process.env.WEB_ORIGIN ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
-    if (!/^https?:\/\/[^/\s]+$/.test(o)) problems.push(`WEB_ORIGIN should be just the web address, like https://orbit-web-xxxx.onrender.com (no path or trailing slash).`);
+    // A trailing slash or path is trimmed automatically (see config.webOrigins); only a non-address fails.
+    if (!/^https?:\/\/[^/\s]+/.test(o)) problems.push(`WEB_ORIGIN should be the web address, like https://orbit-web-xxxx.onrender.com.`);
   }
   if (problems.length) throw new Error(`Settings need fixing in Render (orbit-api → Environment):\n - ${problems.join('\n - ')}`);
 }
