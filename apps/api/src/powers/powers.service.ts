@@ -18,13 +18,14 @@ import { runtime } from '../config';
 import { logger } from '../logger';
 import { open, seal } from './crypto';
 import * as google from './google';
+import { metaConfig } from '../channels/meta';
 
-export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null }[] = [
+export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' }[] = [
   { type: 'google_calendar', group: 'calendar', oauth: 'google' },
   { type: 'gmail', group: 'messaging', oauth: 'google' },
-  { type: 'whatsapp', group: 'messaging', oauth: null },
-  { type: 'instagram', group: 'messaging', oauth: null },
-  { type: 'messenger', group: 'messaging', oauth: null },
+  { type: 'whatsapp', group: 'messaging', oauth: null, form: 'meta' },
+  { type: 'instagram', group: 'messaging', oauth: null, form: 'meta' },
+  { type: 'messenger', group: 'messaging', oauth: null, form: 'meta' },
   { type: 'outlook', group: 'messaging', oauth: null },
   { type: 'sms', group: 'messaging', oauth: null },
   { type: 'phone', group: 'messaging', oauth: null },
@@ -102,15 +103,16 @@ export class PowersService implements OnModuleInit {
 
   async list(tx: Tx) {
     const plan = await tx.one<{ features: PlanFeatures }>(`SELECT p.features FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`);
-    const rows = await tx.q(`SELECT id, power_type, account_label, status, error, scopes, last_sync_at, created_at FROM power_connections WHERE status <> 'disconnected'`);
+    const rows = await tx.q(`SELECT id, power_type, account_label, status, error, scopes, last_sync_at, settings, created_at FROM power_connections WHERE status <> 'disconnected'`);
     return POWER_CATALOGUE.map((p) => {
       const c = rows.find((r) => r.power_type === p.type);
       return {
         type: p.type,
         group: p.group,
-        available: p.oauth !== null && google.googleConfigured(),
+        available: p.form === 'meta' ? metaConfig.ready : p.oauth !== null && google.googleConfigured(),
+        form: p.form ?? null,
         onPlan: planAllowsPower(plan!.features, p.type),
-        connection: c ? { id: c.id, status: c.status, account: c.account_label, error: c.error, scopes: c.scopes, lastSyncAt: c.last_sync_at } : null,
+        connection: c ? { id: c.id, status: c.status, account: c.account_label, error: c.error, scopes: c.scopes, lastSyncAt: c.last_sync_at, settings: c.settings ?? {} } : null,
       };
     });
   }
@@ -157,10 +159,12 @@ export class PowersService implements OnModuleInit {
   async disconnect(t: Tenant, id: string) {
     const conn = await this.db.withTenant(t.businessId, (tx) => tx.one(`SELECT * FROM power_connections WHERE id = $1 AND status <> 'disconnected'`, [id]));
     if (!conn) throw notFound();
-    const tokens = open<google.GoogleTokens>(conn.encrypted_tokens);
+    const isGoogle = POWER_CATALOGUE.find((p) => p.type === conn.power_type)?.oauth === 'google';
+    const tokens = isGoogle ? open<google.GoogleTokens>(conn.encrypted_tokens) : null;
     if (tokens) await google.revoke(tokens.refresh_token ?? tokens.access_token);
     await this.db.withTenant(t.businessId, async (tx) => {
       await tx.q(`UPDATE power_connections SET status = 'disconnected', encrypted_tokens = NULL WHERE id = $1`, [id]);
+      await tx.q(`DELETE FROM channel_routes WHERE power_connection_id = $1`, [id]);
       if (conn.power_type === 'google_calendar') await tx.q(`UPDATE businesses SET calendar_mode = 'builtin' WHERE id = $1`, [t.businessId]);
       await postFeed(tx, 'orbit', 'power_disconnected', { key: 'feed.orbit.power_disconnected', params: { power: `@power.${conn.power_type}` } }, { entityType: 'power', entityId: id });
     }, t.userId);
@@ -267,7 +271,22 @@ export class PowersService implements OnModuleInit {
          LEFT JOIN customers c ON c.id = cv.customer_id WHERE ms.id = $1 FOR UPDATE OF ms`,
         [messageId],
       );
-      if (!m || m.direction !== 'out' || m.channel !== 'gmail' || m.channel_message_id) return;
+      if (!m || m.direction !== 'out' || m.channel_message_id || m.delivery_status === 'failed') return;
+      if (m.channel !== 'gmail') {
+        const send = this.channels.sender(m.channel);
+        if (!send) return;
+        try {
+          const r = await send(tx, m);
+          await tx.q(`UPDATE messages SET delivery_status = 'sent', channel_message_id = $2, delivery_error = NULL WHERE id = $1`, [m.id, r.channelMessageId]);
+        } catch (e) {
+          // Outages and rate limits retry (job backoff); a refusal is final and shown in the inbox.
+          const status = (e as { status?: number }).status ?? 0;
+          if (!status || status >= 500 || status === 429) throw e;
+          await tx.q(`UPDATE messages SET delivery_status = 'failed', delivery_error = $2 WHERE id = $1`, [m.id, (e as Error).message.slice(0, 500)]);
+          liveToBusiness(tx, { type: 'conversation.updated', data: { id: m.conversation_id } });
+        }
+        return;
+      }
       const conn = await this.connection(tx, 'gmail');
       const access = conn && (await this.accessToken(tx, conn));
       if (!access || !m.email) {

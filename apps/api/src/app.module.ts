@@ -19,6 +19,7 @@ import { AiModule } from './ai/ai.module';
 import { KnowledgeModule } from './knowledge/knowledge.service';
 import { BriefingModule } from './briefing/briefing.service';
 import { PowersModule } from './powers/powers.service';
+import { MetaChannelsModule } from './channels/meta.service';
 
 @Controller()
 class HealthController {
@@ -41,6 +42,7 @@ class HealthController {
     AiModule,
     BriefingModule,
     PowersModule,
+    MetaChannelsModule,
     AuditModule,
     AuthModule,
     TemplatesModule,

@@ -24,17 +24,31 @@ export interface ChannelAdapter {
   send(tx: Tx, m: OutboundMessage): Promise<{ conversationId?: string }>;
 }
 
+/** An outbound inbox message waiting to be delivered on its conversation's channel. */
+export interface OutboundRow {
+  id: string;
+  conversation_id: string;
+  body: string;
+  sender: string;
+  channel: string;
+  external_thread_id: string | null;
+}
+
+/** Delivers one outbound inbox message on an external channel; returns the channel's message id. */
+export type ChannelSender = (tx: Tx, m: OutboundRow) => Promise<{ channelMessageId: string }>;
+
 /** Order Orbit tries channels in when the preferred one cannot reach the customer. */
 const FALLBACK_ORDER = ['whatsapp', 'sms', 'gmail', 'web_chat'];
 
 /**
  * Routes outbound messages to the best connected channel. Adapters register
- * themselves (web chat now; Gmail when the Power is connected; WhatsApp and SMS
- * arrive in Phase 3). Opt-outs are checked for every channel.
+ * themselves (web chat; Gmail and WhatsApp when connected). Opt-outs are checked
+ * for every channel.
  */
 @Injectable()
 export class ChannelsService {
   private adapters = new Map<string, ChannelAdapter>();
+  private senders = new Map<string, ChannelSender>();
 
   constructor() {
     this.register('web_chat', new WebChatAdapter());
@@ -42,6 +56,14 @@ export class ChannelsService {
 
   register(channel: string, adapter: ChannelAdapter) {
     this.adapters.set(channel, adapter);
+  }
+
+  registerSender(channel: string, sender: ChannelSender) {
+    this.senders.set(channel, sender);
+  }
+
+  sender(channel: string): ChannelSender | undefined {
+    return this.senders.get(channel);
   }
 
   async deliver(tx: Tx, preferred: string, m: OutboundMessage): Promise<DeliveryResult> {

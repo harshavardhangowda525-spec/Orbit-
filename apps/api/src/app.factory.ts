@@ -12,7 +12,8 @@ export function configureApp(app: NestExpressApplication) {
   app.use(requestContextMiddleware);
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableCors({ origin: config.webOrigins, allowedHeaders: ['authorization', 'content-type', 'x-business-id', 'x-request-id', 'x-visitor-token'] });
-  app.useBodyParser('json', { limit: '256kb' });
+  // Keep the raw bytes too: Meta signs webhook bodies (X-Hub-Signature-256).
+  app.useBodyParser('json', { limit: '256kb', verify: (req: any, _res: unknown, buf: Buffer) => { req.rawBody = buf; } });
   return app;
 }
 

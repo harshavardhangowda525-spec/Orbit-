@@ -12,7 +12,8 @@ import { bootApp, onboard, signIn, api, appDb, asTenant, SEED } from './helpers'
 
 type Biz = Awaited<ReturnType<typeof onboard>> & { customerId: string; conversationId: string; bookingId: string; taskId: string; cardId: string; feedId: string };
 
-const PLATFORM_TABLES_WITH_BUSINESS_ID = ['memberships', 'audit_log', 'oauth_states'];
+// channel_routes: webhook routing (Meta account id -> business), exact lookups only, no customer data.
+const PLATFORM_TABLES_WITH_BUSINESS_ID = ['memberships', 'audit_log', 'oauth_states', 'channel_routes'];
 
 describe('data isolation between businesses', () => {
   let app: NestExpressApplication;
