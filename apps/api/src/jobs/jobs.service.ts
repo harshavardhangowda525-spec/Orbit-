@@ -40,14 +40,16 @@ export class JobsService implements OnModuleDestroy {
 
   async enqueue(name: string, data: Record<string, unknown>, opts: { delayMs?: number; jobId?: string } = {}) {
     const delay = Math.max(0, opts.delayMs ?? 0);
+    // BullMQ rejects custom job ids containing ':' (its key separator).
+    const jobId = opts.jobId?.replace(/:/g, '_');
     if (runtime.jobsMode === 'inline' || !this.queue) {
-      if (opts.jobId && this.pending.some((p) => p.jobId === opts.jobId)) return;
-      this.pending.push({ name, data, runAt: Date.now() + delay, jobId: opts.jobId });
+      if (jobId && this.pending.some((p) => p.jobId === jobId)) return;
+      this.pending.push({ name, data, runAt: Date.now() + delay, jobId });
       return;
     }
     await this.queue.add(name, data, {
       delay,
-      jobId: opts.jobId,
+      jobId,
       attempts: 5,
       backoff: { type: 'exponential', delay: 30_000 },
       removeOnComplete: 1000,

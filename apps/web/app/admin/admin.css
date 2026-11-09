@@ -1,0 +1,28 @@
+/* Admin panel layout on top of the space theme. */
+.admin h3 { margin: 0; font-size: 1rem; font-weight: 800; }
+.admin .card { padding: 16px; border-radius: 20px; }
+.admin .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin .seg button[aria-current='true'] { background: #fff; color: #1c1a3a; border-color: #fff; }
+.admin .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; align-items: end; }
+.admin .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--muted); }
+.admin .field .input { font-weight: 400; color: #fff; }
+.admin .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.admin .check-row { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 0.95rem; }
+.admin .check-row input { width: 18px; height: 18px; accent-color: #7a68ff; }
+.admin .svc-head, .admin .svc-row { display: grid; grid-template-columns: 1fr 90px 100px 44px; gap: 8px; align-items: center; }
+.admin .faq-row { display: grid; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.admin .faq-row .link-btn { justify-self: start; }
+.admin .table th { color: var(--muted); font-weight: 700; }
+.admin .table th, .admin .table td { border-color: rgba(255, 255, 255, 0.12); padding: 10px 8px; }
+.admin .mono { font-family: ui-monospace, monospace; }
+.admin .note { padding: 6px 12px; border-radius: 12px; margin: 0; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.stat-grid .stat { display: flex; flex-direction: column; gap: 6px; padding: 18px; }
+.stat-grid .stat b { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.stat-grid .stat span { color: var(--muted); font-size: 0.9rem; }
+.stat-grid .stat.bad b { color: #ffb59e; }
+@media (max-width: 560px) {
+  .admin .svc-head, .admin .svc-row { grid-template-columns: 1fr 70px 80px 40px; }
+}
+.stat-grid > .card, .admin .stack > .card { margin: 0; }
+.admin textarea.input { font: inherit; }

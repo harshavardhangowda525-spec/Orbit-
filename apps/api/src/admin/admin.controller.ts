@@ -141,7 +141,7 @@ export class AdminController {
 
   @Get('audit')
   auditLog() {
-    return this.db.adminTx((tx) => tx.q(`SELECT a.action, a.actor_kind, a.entity, a.business_id, a.at, u.phone AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ORDER BY a.at DESC LIMIT 100`));
+    return this.db.adminTx((tx) => tx.q(`SELECT a.action, a.actor_kind, a.entity, a.business_id, a.at, COALESCE(u.email::text, u.phone, u.name) AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ORDER BY a.at DESC LIMIT 100`));
   }
 }
 

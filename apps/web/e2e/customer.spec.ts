@@ -19,6 +19,8 @@ test('a customer books a real free slot from the public page', async ({ page }) 
   const flow = page.getByTestId('booking');
   await flow.getByRole('button', { name: /^Haircut/ }).click();
   await flow.getByRole('button', { name: 'Anyone available' }).click();
+  // A later day, so the slot is never inside the 2-hour "no changes" window.
+  await flow.locator('.day-tabs .chip').nth(1).click();
   await flow.locator('.slot-grid .btn').last().click();
   await flow.getByLabel('Your name').fill('Rekha');
   await flow.getByLabel('Mobile number').fill(`98${String(Date.now()).slice(-8)}`);
