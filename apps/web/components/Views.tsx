@@ -94,7 +94,8 @@ const GROUPS = ['calendar', 'messaging', 'payments', 'records', 'presence'];
 /** Powers: what each service lets Orbit do, and one tap to connect or disconnect. */
 export function PowersView() {
   const { t } = useI18n();
-  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const [form, setForm] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const connect = async (type: string) => {
@@ -140,13 +141,14 @@ export function PowersView() {
                   <button className="btn small" disabled={busy === p.type} onClick={() => disconnect(p.connection!.id, p.type)}>{t('powers.disconnect')}</button>
                 ) : p.available ? (
                   p.onPlan ? (
-                    <button className="btn small primary" disabled={busy === p.type} onClick={() => connect(p.type)}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
+                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? setForm(form === p.type ? null : p.type) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
                   ) : (
                     <span className="chip">{t('powers.upgrade')}</span>
                   )
                 ) : (
                   <span className="chip">{p.connection?.status === 'pending' ? t('powers.pending') : t('powers.soon')}</span>
                 )}
+                {form === p.type && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
               </div>
             ))}
           </div>
@@ -237,5 +239,67 @@ export function ComingView({ view }: { view: 'tomorrow' | 'rewind' }) {
       <h2>{t(`view.${view}`)}</h2>
       <p>{t(`coming.${view}`)}</p>
     </section>
+  );
+}
+
+type MetaType = 'whatsapp' | 'messenger' | 'instagram';
+const META_FIELDS: Record<MetaType, { key: string; label: string; hint: string; secret?: boolean; optional?: boolean }[]> = {
+  whatsapp: [
+    { key: 'phoneNumberId', label: 'meta.f.phone_number_id', hint: 'meta.h.phone_number_id' },
+    { key: 'accessToken', label: 'meta.f.token', hint: 'meta.h.token_wa', secret: true },
+    { key: 'templateName', label: 'meta.f.template', hint: 'meta.h.template', optional: true },
+    { key: 'templateLanguage', label: 'meta.f.template_lang', hint: 'meta.h.template_lang', optional: true },
+  ],
+  messenger: [
+    { key: 'pageId', label: 'meta.f.page_id', hint: 'meta.h.page_id' },
+    { key: 'accessToken', label: 'meta.f.token', hint: 'meta.h.token_page', secret: true },
+  ],
+  instagram: [
+    { key: 'instagramId', label: 'meta.f.instagram_id', hint: 'meta.h.instagram_id' },
+    { key: 'pageId', label: 'meta.f.page_id', hint: 'meta.h.page_id_ig' },
+    { key: 'accessToken', label: 'meta.f.token', hint: 'meta.h.token_page', secret: true },
+  ],
+};
+
+/** Connect WhatsApp / Messenger / Instagram: the IDs and token from Meta, with where to find each one. */
+function MetaConnectForm({ type, onDone, onCancel }: { type: MetaType; onDone: () => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [v, setV] = useState<Record<string, string>>(type === 'whatsapp' ? { templateLanguage: 'en' } : {});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/channels/${type}/connect`, { body: v });
+      onDone();
+    } catch (x) {
+      setErr((x as ApiError).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="meta-form stack" onSubmit={submit} data-testid={`connect-${type}`}>
+      <details className="meta-help">
+        <summary>{t('meta.help.title')}</summary>
+        <ol>{t(`meta.help.${type}`, { var: '{{1}}' }).split('\n').map((line, i) => <li key={i}>{line}</li>)}</ol>
+      </details>
+      {META_FIELDS[type].map((f) => (
+        <label key={f.key} className="field">
+          <span>{t(f.label)}{f.optional ? ` (${t('common.optional')})` : ''}</span>
+          <input className="input" type={f.secret ? 'password' : 'text'} autoComplete="off" spellCheck={false} value={v[f.key] ?? ''} required={!f.optional}
+            onChange={(e) => setV({ ...v, [f.key]: e.target.value })} />
+          <small className="muted">{t(f.hint, { var: '{{1}}' })}</small>
+        </label>
+      ))}
+      <p className="small muted">{t('meta.secure')}</p>
+      {err && <p className="error">{err}</p>}
+      <div className="row">
+        <button className="btn primary" disabled={busy}>{busy ? t('common.wait') : t('powers.connect')}</button>
+        <button type="button" className="btn" onClick={onCancel}>{t('meta.cancel')}</button>
+      </div>
+    </form>
   );
 }

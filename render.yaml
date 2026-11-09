@@ -54,6 +54,11 @@ services:
         value: fake            # change to groq or claude once its key is set
       - key: GROQ_API_KEY
         sync: false
+      # WhatsApp / Instagram / Messenger: Orbit's Meta app (docs/DEPLOY.md).
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
       # Demo businesses (Glow Studio, IronCore Gym) are for local development only.
       - key: SEED_DEMO
         value: "false"

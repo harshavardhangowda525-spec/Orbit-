@@ -233,3 +233,14 @@ textarea.input { min-height: 220px; font-family: ui-monospace, Menlo, monospace;
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* Connect WhatsApp / Messenger / Instagram */
+.list-item:has(.meta-form) { flex-wrap: wrap; }
+.meta-form { flex-basis: 100%; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.meta-form .field { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 0.9rem; }
+.meta-form .field small { font-weight: 400; line-height: 1.4; }
+.meta-help summary { cursor: pointer; font-weight: 700; color: var(--accent, #7a68ff); min-height: 32px; }
+.meta-help ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 0.9rem; line-height: 1.45; }
+/* Inbox delivery ticks */
+.bubble .delivery { display: block; text-align: right; font-size: 11px; opacity: 0.7; margin-top: 2px; }
+.bubble .delivery.failed { opacity: 1; color: var(--attn-ink); text-align: left; font-size: 12px; }

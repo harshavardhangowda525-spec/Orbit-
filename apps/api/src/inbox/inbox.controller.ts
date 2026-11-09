@@ -53,7 +53,8 @@ export class InboxController {
         : null;
       // Full history across every channel this customer has used.
       const messages = await tx.q(
-        `SELECT m.id, m.direction, m.sender, m.body, m.created_at AS at, cv.channel, m.conversation_id AS "conversationId"
+        `SELECT m.id, m.direction, m.sender, m.body, m.created_at AS at, cv.channel, m.conversation_id AS "conversationId",
+                m.delivery_status AS "deliveryStatus", m.delivery_error AS "deliveryError"
          FROM messages m JOIN conversations cv ON cv.id = m.conversation_id
          WHERE ${customer ? 'cv.customer_id = $1' : 'cv.id = $1'} ORDER BY m.created_at LIMIT 500`,
         [customer ? customer.id : id],

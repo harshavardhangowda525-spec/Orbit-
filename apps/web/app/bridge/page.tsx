@@ -148,9 +148,10 @@ function Bridge() {
           onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} openScreen={openScreen} />
       )}
       {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} />}
-      {view === 'people' && <PeopleView />}
-      {view === 'powers' && <PowersView />}
-      {view === 'details' && <DetailsView />}
+      {/* These load business data, so they wait until The Bridge (and the chosen business) is ready. */}
+      {data && view === 'people' && <PeopleView />}
+      {data && view === 'powers' && <PowersView />}
+      {data && view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}
       {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} /></div>}
     </main>

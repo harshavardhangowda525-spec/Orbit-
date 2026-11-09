@@ -87,6 +87,11 @@ export default function Conversation() {
               <div key={m.id} className={`bubble ${m.direction === 'in' ? 'out' : 'in'}`} style={m.direction === 'out' && m.sender === 'aria' ? { background: 'var(--aria)', color: 'var(--aria-ink)' } : undefined}>
                 <span className="who">{m.direction === 'in' ? (c?.name ?? t('details.visitor')) : m.sender === 'aria' ? 'Aria' : m.sender.startsWith('user:') ? t('inbox.team') : m.sender} · {fmt(m.at)}</span>
                 {m.body}
+                {m.direction === 'out' && !['website_chat', 'chat_link'].includes(m.channel) && (
+                  m.deliveryStatus === 'failed'
+                    ? <span className="delivery failed">{t('inbox.not_delivered', { reason: m.deliveryError ?? '' })}</span>
+                    : <span className="delivery" aria-label={t(`inbox.status.${m.deliveryStatus ?? 'sent'}`)}>{m.deliveryStatus === 'read' ? '✓✓' : m.deliveryStatus === 'delivered' ? '✓✓' : '✓'}</span>
+                )}
               </div>
             ))}
             <div ref={end} />

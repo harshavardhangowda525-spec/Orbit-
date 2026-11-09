@@ -171,6 +171,36 @@ Now that you know the real orbit-web address, do step **2** of A5 (Site URL and 
 
 ---
 
+## WhatsApp, Instagram and Messenger (Meta)
+Orbit uses **one Meta app** for all businesses. You set it up once; each business then connects its own number or page from **The Bridge → Powers**.
+
+**1. Create the Meta app**
+1. Go to **developers.facebook.com** → **My Apps** → **Create app** → use case **Other** → type **Business**. Name it `Orbit`.
+2. In the app, open **App settings → Basic** and copy the **App secret** (click **Show**).
+3. Add the products **WhatsApp** and **Messenger** (Messenger also covers Instagram).
+
+**2. Tell orbit-api about it** (Render → orbit-api → Environment)
+
+| Key | Value |
+|---|---|
+| `META_APP_SECRET` | the App secret from step 1.2 |
+| `META_VERIFY_TOKEN` | any long random text you make up (letters and numbers), e.g. `orbitverify8Kq2mZ` |
+
+Save; it redeploys.
+
+**3. Point Meta's webhooks at Orbit**
+1. In the Meta app: **WhatsApp → Configuration → Webhook → Edit**:
+   - **Callback URL:** `https://<your orbit-api address>/webhooks/meta`
+   - **Verify token:** the same `META_VERIFY_TOKEN`
+   - Click **Verify and save**, then under **Webhook fields** subscribe to **messages**.
+2. **Messenger → Settings → Webhooks** (and **Instagram settings → Webhooks**): same Callback URL and Verify token; subscribe to **messages**.
+
+**4. Go live**
+While the app is in **Development** mode only people with a role on the app can message it. For real customers: **App settings → Basic** (privacy policy URL, icon), then **App Review** for `whatsapp_business_messaging`, `pages_messaging` and `instagram_manage_messages`, then switch the app to **Live**.
+
+**5. Each business connects**
+In Orbit: **The Bridge → Powers → WhatsApp / Instagram / Messenger → Connect**. The form explains where to find each ID and token. WhatsApp can also take an approved **message template** (body `{{1}}`) so Orbit can send reminders to customers who last wrote more than 24 hours ago.
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |
