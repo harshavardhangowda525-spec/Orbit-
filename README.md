@@ -97,7 +97,7 @@ npm run test:e2e
 | `AUTH_PROVIDER`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_EMAILS` | `supabase` = sign-in by Supabase Auth (tokens checked against the project's signing keys; the secret only for legacy projects). Default `orbit` (local). |
 | `DATABASE_SSL`, `DATABASE_CA_CERT` | `require` for hosted Postgres such as Supabase; `verify` also checks the certificate. |
 | `SEED_DEMO` | `true` adds the two demo businesses on first start (hosting). |
-| `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_EFFORT` | Aria's model. `claude` (default, Opus 5.5 at low effort) or `fake` (offline demo). |
+| `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_EFFORT`, `GROQ_API_KEY`, `GROQ_MODEL` | Aria's model. `claude` (default, Opus 5.5 at low effort), `groq` (open models via Groq; cheaper, less reliable with tools and Indian languages) or `fake` (offline demo). |
 | `JOBS_MODE`, `JOBS_ENABLED`, `REALTIME_MODE` | Background jobs (BullMQ) and live updates (Redis pub/sub). |
 | `POWERS_ENCRYPTION_KEY` | 32-byte base64 key encrypting Power tokens. Required in production. |
 | `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `WEB_BASE_URL` | Google Calendar and Gmail Powers (OAuth). |

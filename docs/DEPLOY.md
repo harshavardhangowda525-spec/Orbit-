@@ -164,7 +164,9 @@ Render may add letters to a name if it's already taken, for example `orbit-web-x
 
 | What | Setting |
 |---|---|
-| Real AI for Aria | `AI_PROVIDER=claude` and `ANTHROPIC_API_KEY=<your key>` (without this, Aria uses the offline demo brain) |
+| Real AI for Aria (Claude) | `AI_PROVIDER=claude` and `ANTHROPIC_API_KEY=<your key>` |
+| Real AI for Aria (Groq) | `AI_PROVIDER=groq` and `GROQ_API_KEY=<your key>`; optional `GROQ_MODEL` (default `llama-3.3-70b-versatile`) |
+| No AI key yet | `AI_PROVIDER=fake`: the offline demo brain answers from FAQs and offers real slots |
 | No demo businesses | `SEED_DEMO=false` |
 | Google Calendar / Gmail Powers | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI=https://<orbit-api>/powers/oauth/callback` |
 

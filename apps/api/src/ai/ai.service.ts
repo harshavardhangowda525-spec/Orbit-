@@ -4,6 +4,8 @@ import { DbService } from '../db/db.service';
 import { runtime } from '../config';
 import { ClaudeProvider, costOf, type AiProvider, type AiRequest, type AiResponse } from './provider';
 import { FakeProvider } from './fake.provider';
+import { GroqProvider } from './groq.provider';
+import { logger } from '../logger';
 
 /**
  * The single entry point for LLM calls. Picks the provider and records tokens
@@ -13,7 +15,10 @@ import { FakeProvider } from './fake.provider';
 export class AiService {
   readonly provider: AiProvider;
   constructor(private readonly db: DbService) {
-    this.provider = runtime.aiProvider === 'fake' ? new FakeProvider() : new ClaudeProvider();
+    const p = runtime.aiProvider;
+    if (!['claude', 'groq', 'fake'].includes(p)) logger.warn(`Unknown AI_PROVIDER "${p}"; using claude. Valid values: claude, groq, fake.`, 'AI');
+    this.provider = p === 'fake' ? new FakeProvider() : p === 'groq' ? new GroqProvider() : new ClaudeProvider();
+    logger.log(`AI provider: ${this.provider.name}`, 'AI');
   }
 
   get fake(): FakeProvider | null {

@@ -45,5 +45,7 @@ ALTER ROLE orbit_migrator SET search_path = public, extensions;
 ALTER ROLE orbit_app SET search_path = public, extensions;
 ALTER ROLE orbit_admin SET search_path = public, extensions;
 
--- Check: the last column must be true for orbit_admin (or use the postgres URL, see above).
-SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname LIKE 'orbit_%' ORDER BY rolname;
+-- Check: orbit_migrator must show can_create_tables = true, and orbit_admin
+-- rolbypassrls = true (or use the postgres URL for it, see above).
+SELECT r.rolname, has_schema_privilege(r.rolname, 'public', 'CREATE') AS can_create_tables, r.rolbypassrls
+FROM pg_roles r WHERE r.rolname LIKE 'orbit_%' ORDER BY 1;

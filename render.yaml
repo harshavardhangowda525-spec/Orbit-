@@ -53,7 +53,9 @@ services:
       - key: SEED_OWNER_EMAIL
         sync: false
       - key: AI_PROVIDER
-        value: fake
+        value: fake            # change to groq or claude once its key is set
+      - key: GROQ_API_KEY
+        sync: false
       - key: SEED_DEMO
         value: "true"
       - key: OTP_DEV_ECHO

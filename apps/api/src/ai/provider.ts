@@ -33,9 +33,16 @@ const PRICES: Record<string, [number, number, number, number]> = {
   'claude-opus-5-5': [4, 20, 0.2, 5],
   'claude-sonnet-5-5': [2, 10, 0.2, 2.5],
   'claude-haiku-5-5': [0.1, 0.5, 0.01, 0.125],
+  // Groq (approximate list prices).
+  'llama-3.3-70b-versatile': [0.59, 0.79, 0, 0],
+  'llama-3.1-8b-instant': [0.05, 0.08, 0, 0],
+  'openai/gpt-oss-120b': [0.15, 0.75, 0, 0],
+  'openai/gpt-oss-20b': [0.1, 0.5, 0, 0],
 };
+/** Unknown non-Claude models (e.g. another Groq model) are priced like a mid-size open model. */
+const OPEN_MODEL_PRICE: [number, number, number, number] = [0.59, 0.79, 0, 0];
 export function costOf(model: string, u: AiResponse['usage']): number {
-  const p = PRICES[model] ?? PRICES['claude-opus-5-5'];
+  const p = PRICES[model] ?? (model.startsWith('claude') ? PRICES['claude-opus-5-5'] : model === 'fake' ? [0, 0, 0, 0] : OPEN_MODEL_PRICE);
   return (u.input * p[0] + u.output * p[1] + u.cacheRead * p[2] + u.cacheWrite * p[3]) / 1_000_000;
 }
 
