@@ -3,7 +3,7 @@
 import './space.css';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, session } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { homeFor, useSession } from '@/lib/session';
 import { getSupabase } from '@/lib/supabase';
@@ -12,26 +12,30 @@ import { usePageVisible } from '@/lib/motion';
 import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PASSWORD_MIN = 8;
+
+type Mode = 'login' | 'signup' | 'reset';
 
 /**
- * Sign in with an emailed 6-digit code (or Google).
- * Hosted: Supabase Auth sends and checks the code. Local development: Orbit's own
- * API does, and shows the code on screen in test mode.
+ * Log in or sign up with email + password, or with Google.
+ * Hosted: Supabase Auth (it emails the confirmation and reset links).
+ * Local development: Orbit's own API.
  */
 export default function Login() {
   const { t, lang, setLang, languages } = useI18n();
   const { signIn, me, loading } = useSession();
   const router = useRouter();
   const visible = usePageVisible();
+  const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [sb, setSb] = useState<ReturnType<typeof getSupabase>>(null);
   useEffect(() => setSb(getSupabase()), []);
   const showGoogle = !!sb && publicEnv('AUTH_GOOGLE') !== 'false';
+
   // On a hosted site, sign-in needs Supabase and the API address; say which setting is missing instead of failing later.
   const [setupProblem, setSetupProblem] = useState<string | null>(null);
   useEffect(() => {
@@ -40,54 +44,101 @@ export default function Login() {
     if (missing.length) setSetupProblem(`Sign-in is not set up on this site yet. Add ${missing.join(', ')} in Render (orbit-web → Environment), then redeploy.`);
   }, []);
 
+  // Coming back from an email link: "?reset=1" opens the new-password form; an expired link says so.
   useEffect(() => {
-    if (!loading && me) router.replace(homeFor(me));
-  }, [loading, me, router]);
+    const q = new URLSearchParams(window.location.search);
+    const h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (q.get('reset') === '1') setMode('reset');
+    if (q.get('error') || h.get('error')) setError(t('login.link_expired'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!loading && me && mode !== 'reset') router.replace(homeFor(me));
+  }, [loading, me, mode, router]);
+
+  function switchTo(m: Mode) {
+    setMode(m);
+    setError(null);
+    setInfo(null);
+  }
 
   async function done(token: string) {
+    // Ask the API first, so a reason such as "confirm your email first" is shown here.
+    session.setToken(token);
+    await api('/auth/me', { business: false });
     const m = await signIn(token);
     router.replace(homeFor(m));
   }
 
-  async function requestCode(e: React.FormEvent) {
-    e.preventDefault();
+  function check(): string | null {
     const addr = email.trim().toLowerCase();
-    if (!EMAIL_RE.test(addr)) return setError(t('login.email_invalid'));
+    if (!EMAIL_RE.test(addr)) return t('login.email_invalid');
+    if (password.length < PASSWORD_MIN) return t('login.password_short');
+    return null;
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const problem = check();
+    if (problem) return setError(problem);
+    const addr = email.trim().toLowerCase();
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       if (sb) {
-        const { error: e2 } = await sb.auth.signInWithOtp({ email: addr, options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}/login` } });
-        if (e2) throw new Error(e2.status === 429 ? t('login.wait_minute') : t('login.email_failed'));
-        setDevCode(null);
-      } else {
-        const r = await api<{ email: string; devCode?: string }>('/auth/email/request', { body: { email: addr }, business: false });
-        setDevCode(r.devCode ?? null);
+        if (mode === 'signup') {
+          const { data, error: e2 } = await sb.auth.signUp({ email: addr, password, options: { emailRedirectTo: `${window.location.origin}/login` } });
+          if (e2) throw new Error(e2.status === 429 ? t('login.wait_minute') : /registered|exists/i.test(e2.message) ? t('login.account_exists') : e2.message);
+          if (data.session) return await done(data.session.access_token);
+          // Email confirmation is on: Supabase sent a link.
+          setInfo(t('login.confirm_sent', { email: addr }));
+          setMode('login');
+          setPassword('');
+          return;
+        }
+        const { data, error: e2 } = await sb.auth.signInWithPassword({ email: addr, password });
+        if (e2) {
+          if (/confirm/i.test(e2.message)) throw new Error(t('login.not_confirmed'));
+          throw new Error(e2.status === 429 ? t('login.wait_minute') : t('login.wrong_password'));
+        }
+        return await done(data.session!.access_token);
       }
-      setSentTo(addr);
-      setCode('');
+      const r = await api<{ token: string }>(mode === 'signup' ? '/auth/signup' : '/auth/login', { body: { email: addr, password }, business: false });
+      await done(r.token);
     } catch (err) {
-      setError((err as ApiError).message);
+      const e2 = err as ApiError;
+      setError(e2.code === 'wrong_password' ? t('login.wrong_password') : e2.code === 'account_exists' ? t('login.account_exists') : e2.message);
     } finally {
       setBusy(false);
     }
   }
 
-  async function verify(e: React.FormEvent) {
+  async function forgot() {
+    const addr = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(addr)) return setError(t('login.reset_email_first'));
+    setError(null);
+    const { error: e2 } = await sb!.auth.resetPasswordForEmail(addr, { redirectTo: `${window.location.origin}/login?reset=1` });
+    if (e2?.status === 429) return setError(t('login.wait_minute'));
+    // Same answer whether or not the account exists.
+    setInfo(t('login.reset_sent', { email: addr }));
+  }
+
+  async function saveNewPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (password.length < PASSWORD_MIN) return setError(t('login.password_short'));
     setBusy(true);
     setError(null);
     try {
-      if (sb) {
-        const { data, error: e2 } = await sb.auth.verifyOtp({ email: sentTo!, token: code, type: 'email' });
-        if (e2 || !data.session) throw new Error(t('login.code_wrong'));
-        await done(data.session.access_token);
-        return;
-      }
-      const r = await api<{ token: string }>('/auth/email/verify', { body: { email: sentTo, code }, business: false });
-      await done(r.token);
+      const { data, error: e2 } = await sb!.auth.updateUser({ password });
+      if (e2) throw new Error(/session/i.test(e2.message) ? t('login.link_expired') : e2.message);
+      const { data: s } = await sb!.auth.getSession();
+      window.history.replaceState(null, '', '/login');
+      if (s.session && data.user) await done(s.session.access_token);
     } catch (err) {
-      setError((err as ApiError).message);
+      setError((err as Error).message);
+    } finally {
       setBusy(false);
     }
   }
@@ -112,18 +163,41 @@ export default function Login() {
             <div className="spin"><i /></div>
           </div>
 
-          {!sentTo ? (
+          {mode === 'reset' ? (
             <>
-              <h1>{t('login.welcome')}</h1>
+              <h1>{t('login.new_password_title')}</h1>
+              <form onSubmit={saveNewPassword} noValidate>
+                <label htmlFor="new-password">{t('login.new_password')}</label>
+                <input id="new-password" className="glass-input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <p className="hint">{t('login.password_hint')}</p>
+                <button className="glass-btn" disabled={busy || !password}>{busy ? t('common.wait') : t('login.save_password')}</button>
+              </form>
+            </>
+          ) : (
+            <>
+              <h1>{mode === 'signup' ? t('login.signup_title') : t('login.welcome')}</h1>
               <p className="sub">{t('login.tagline')}</p>
-              <form onSubmit={requestCode} noValidate>
+              <div className="tabs" role="tablist">
+                <button role="tab" aria-selected={mode === 'login'} onClick={() => switchTo('login')}>{t('login.tab_login')}</button>
+                <button role="tab" aria-selected={mode === 'signup'} onClick={() => switchTo('signup')}>{t('login.tab_signup')}</button>
+              </div>
+              <form onSubmit={submit} noValidate>
                 <label htmlFor="email">{t('login.email')}</label>
                 <input
                   id="email" className="glass-input" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false}
                   placeholder="you@yourbusiness.com" value={email} onChange={(e) => setEmail(e.target.value)} required
                 />
-                <button className="glass-btn" disabled={busy || !email.includes('@')}>{busy ? t('common.wait') : t('login.send_code')}</button>
+                <label htmlFor="password" className="gap">{t('login.password')}</label>
+                <input
+                  id="password" className="glass-input" type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  value={password} onChange={(e) => setPassword(e.target.value)} required
+                />
+                {mode === 'signup' && <p className="hint">{t('login.password_hint')}</p>}
+                <button className="glass-btn" disabled={busy || !email.includes('@') || !password}>
+                  {busy ? t('common.wait') : mode === 'signup' ? t('login.create_account') : t('login.log_in')}
+                </button>
               </form>
+              {mode === 'login' && sb && <button className="link" onClick={forgot}>{t('login.forgot')}</button>}
               {showGoogle && (
                 <>
                   <div className="or">{t('login.or')}</div>
@@ -139,23 +213,12 @@ export default function Login() {
                   </button>
                 </>
               )}
-            </>
-          ) : (
-            <>
-              <h1>{t('login.check_email')}</h1>
-              <p className="sub">{t('login.code_sent_email', { email: sentTo })}</p>
-              {devCode && <p className="info">{t('login.dev_code', { code: devCode })}</p>}
-              <form onSubmit={verify}>
-                <label htmlFor="code">{t('login.code')}</label>
-                <input
-                  id="code" className="glass-input code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
-                  value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                />
-                <button className="glass-btn" disabled={busy || code.length !== 6}>{busy ? t('common.wait') : t('login.verify')}</button>
-              </form>
-              <button className="link" onClick={() => { setSentTo(null); setCode(''); setError(null); }}>{t('login.change_email')}</button>
+              <button className="link small" onClick={() => switchTo(mode === 'login' ? 'signup' : 'login')}>
+                {mode === 'login' ? t('login.no_account') : t('login.have_account')}
+              </button>
             </>
           )}
+          {info && <p className="info" role="status">{info}</p>}
           {(error || setupProblem) && <p className="msg" role="alert">{error ?? setupProblem}</p>}
           <p className="terms">{t('login.terms')}</p>
         </section>

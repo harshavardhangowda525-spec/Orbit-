@@ -65,6 +65,14 @@
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .lang-glass option { color: #1c1a3a; }
 
+/* Log in / Sign up switch. */
+.glass .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 0 0 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); }
+.glass .tabs button { min-height: 42px; border: none; border-radius: 12px; background: transparent; color: rgba(230, 227, 255, 0.8); font-weight: 700; font-size: 15px; cursor: pointer; transition: background 0.2s, color 0.2s; }
+.glass .tabs button[aria-selected='true'] { background: rgba(255, 255, 255, 0.92); color: #1c1a3a; }
+.glass label.gap { margin-top: 14px; }
+.glass .hint { margin: 8px 0 0; font-size: 13px; color: rgba(230, 227, 255, 0.65); }
+.glass .link.small { display: block; margin: 6px auto 0; font-weight: 600; font-size: 14px; }
+
 /* Small orbiting mark at the top of the card. */
 .mark { width: 56px; height: 56px; position: relative; }
 .mark .core { position: absolute; inset: 16px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #c9c4ff, #5b4ce0 60%, #24205e); box-shadow: 0 0 18px rgba(169, 155, 255, 0.7); }

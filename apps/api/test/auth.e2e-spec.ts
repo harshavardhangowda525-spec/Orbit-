@@ -1,6 +1,8 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { bootApp, newEmail, signIn, api, SEED } from './helpers';
+import { bootApp, newEmail, signIn, api, SEED, SEED_PASSWORD } from './helpers';
+import { DbService } from '../src/db/db.service';
+import { seed } from '../src/scripts/seed';
 
 describe('sign-in', () => {
   let app: NestExpressApplication;
@@ -8,43 +10,51 @@ describe('sign-in', () => {
   afterAll(() => app.close());
   const http = () => request(app.getHttpServer());
 
-  it('signs in with an emailed 6-digit code; addresses are case-insensitive', async () => {
+  it('signs up with email + password, then logs in; addresses are case-insensitive', async () => {
     const email = newEmail();
-    const r1 = await http().post('/auth/email/request').send({ email: `  ${email.toUpperCase()} ` }).expect(201);
-    expect(r1.body.email).toBe(email);
-    expect(r1.body.devCode).toMatch(/^\d{6}$/);
-    const r2 = await http().post('/auth/email/verify').send({ email, code: r1.body.devCode }).expect(201);
-    expect(r2.body.isNew).toBe(true);
-    expect(r2.body.user.email).toBe(email);
-    // A code works once.
-    expect((await http().post('/auth/email/verify').send({ email, code: r1.body.devCode })).status).toBe(400);
-    // Signing in again finds the same person.
-    const again = await signIn(app, email);
-    expect(again.userId).toBe(r2.body.user.id);
+    const r1 = await http().post('/auth/signup').send({ email: `  ${email.toUpperCase()} `, password: 'long-enough-pw' }).expect(201);
+    expect(r1.body.isNew).toBe(true);
+    expect(r1.body.user.email).toBe(email);
+    const r2 = await http().post('/auth/login').send({ email: email.toUpperCase(), password: 'long-enough-pw' }).expect(201);
+    expect(r2.body.user.id).toBe(r1.body.user.id);
+    await api(app, r2.body.token).get('/auth/me').expect(200);
+    // The password is stored as a salted scrypt hash, never as text.
+    const row = await (app as any).get(DbService).one(`SELECT password_hash FROM users WHERE email = $1`, [email]);
+    expect(row.password_hash).toMatch(/^scrypt\$/);
+    expect(row.password_hash).not.toContain('long-enough-pw');
   });
 
-  it('rejects wrong codes and locks the code after 5 tries', async () => {
-    const email = newEmail();
-    const r1 = await http().post('/auth/email/request').send({ email }).expect(201);
-    const wrong = r1.body.devCode === '000000' ? '111111' : '000000';
-    for (let i = 0; i < 5; i++) {
-      const r = await http().post('/auth/email/verify').send({ email, code: wrong });
-      expect(r.body.error.code).toBe('otp_wrong');
-    }
-    expect((await http().post('/auth/email/verify').send({ email, code: r1.body.devCode })).body.error.code).toBe('otp_wrong');
+  it('rejects a wrong password and an unknown email with the same message', async () => {
+    const { email } = await signIn(app);
+    const wrong = await http().post('/auth/login').send({ email, password: 'not-the-password' });
+    const unknown = await http().post('/auth/login').send({ email: newEmail(), password: 'not-the-password' });
+    expect(wrong.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(wrong.body.error).toEqual(unknown.body.error);
+    expect(wrong.body.error.message).toBe('That email and password do not match. Please try again.');
   });
 
-  it('limits how many codes one address can ask for', async () => {
-    const email = newEmail();
-    for (let i = 0; i < 5; i++) await http().post('/auth/email/request').send({ email }).expect(201);
-    expect((await http().post('/auth/email/request').send({ email })).status).toBe(429);
+  it('will not sign up the same email twice, or with a short password', async () => {
+    const { email } = await signIn(app);
+    const dup = await http().post('/auth/signup').send({ email, password: 'another-password' });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('account_exists');
+    const short = await http().post('/auth/signup').send({ email: newEmail(), password: 'short' });
+    expect(short.body.error.code).toBe('password_short');
   });
 
-  it('rejects invalid addresses in plain language, and SMS sign-in no longer exists', async () => {
-    const r = await http().post('/auth/email/request').send({ email: 'not-an-email' });
+  it('rejects invalid addresses in plain language; code sign-in no longer exists', async () => {
+    const r = await http().post('/auth/signup').send({ email: 'not-an-email', password: 'long-enough-pw' });
     expect(r.status).toBe(400);
     expect(r.body.error).toEqual({ code: 'invalid_email', message: 'That email address does not look right. Please check it.' });
+    expect((await http().post('/auth/email/request').send({ email: newEmail() })).status).toBe(404);
     expect((await http().post('/auth/otp/request').send({ phone: '9845012345' })).status).toBe(404);
+  });
+
+  it('lets seeded sample owners log in with the seed password', async () => {
+    await seed(process.env.DATABASE_MIGRATION_URL);
+    const r = await http().post('/auth/login').send({ email: SEED.salon, password: SEED_PASSWORD }).expect(201);
+    expect(r.body.user.email).toBe(SEED.salon);
   });
 
   it('signs in with Google and links to the same account next time', async () => {

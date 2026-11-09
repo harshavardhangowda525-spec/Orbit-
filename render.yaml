@@ -58,8 +58,6 @@ services:
         sync: false
       - key: SEED_DEMO
         value: "true"
-      - key: OTP_DEV_ECHO
-        value: "false"
 
   - type: web
     name: orbit-web

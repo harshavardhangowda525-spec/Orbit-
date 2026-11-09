@@ -43,7 +43,7 @@ export class JwtAuthGuard implements CanActivate {
     const header = req.headers.authorization ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) throw new AppError(401, 'unauthorized', 'Please sign in.');
-    const user = await this.resolve(token);
+    const user = await this.resolve(token, true);
     if (!user) throw new AppError(401, 'unauthorized', 'Please sign in again.');
     req.user = user;
     const c = currentContext();
@@ -52,7 +52,7 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   /** Token -> user, shared with the WebSocket gateway. */
-  async resolve(token: string): Promise<{ id: string; impersonation?: { adminId: string; businessId: string } } | null> {
+  async resolve(token: string, explain = false): Promise<{ id: string; impersonation?: { adminId: string; businessId: string } } | null> {
     if (auth.provider === 'supabase' && this.supabase.looksLikeSupabase(token)) {
       try {
         const claims = await this.supabase.verify(token);
@@ -62,7 +62,9 @@ export class JwtAuthGuard implements CanActivate {
         if (this.cache.size > 5000) this.cache.clear();
         this.cache.set(claims.sub, { userId, at: Date.now() });
         return { id: userId };
-      } catch {
+      } catch (e) {
+        // A known reason (e.g. email not confirmed yet) is shown to the person; anything else is just "sign in again".
+        if (explain && e instanceof AppError && e.getStatus() !== 401) throw e;
         return null;
       }
     }

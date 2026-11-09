@@ -7,7 +7,12 @@ export interface SupabaseClaims {
   email: string | null;
   phone: string | null; // Supabase sends digits without "+"
   name: string | null;
+  /** Supabase confirmed the email (or phone), or this sign-in itself proved it (Google, email link). */
+  verified: boolean;
 }
+
+/** Sign-in methods that prove the person controls the email address. */
+const PROVING_METHODS = new Set(['oauth', 'otp', 'magiclink', 'recovery', 'invite', 'email_change']);
 
 /**
  * Verifies Supabase Auth access tokens.
@@ -52,7 +57,9 @@ export class SupabaseVerifier {
     }
     if (typeof payload.sub !== 'string' || payload.role !== 'authenticated') throw new Error('not a signed-in user token');
     const meta = (payload.user_metadata ?? {}) as Record<string, unknown>;
+    const amr = Array.isArray(payload.amr) ? (payload.amr as { method?: string }[]).map((a) => a?.method ?? '') : [];
     return {
+      verified: meta.email_verified === true || meta.phone_verified === true || amr.some((m) => PROVING_METHODS.has(m)),
       sub: payload.sub,
       email: typeof payload.email === 'string' && payload.email ? payload.email.toLowerCase() : null,
       phone: typeof payload.phone === 'string' && payload.phone ? payload.phone : null,

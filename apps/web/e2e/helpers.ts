@@ -12,14 +12,18 @@ export async function midRangePhone(page: Page): Promise<CDPSession> {
 /** Demo accounts created by the seed. */
 export const SEED = { salon: 'meera@glowstudio.example', gym: 'suresh@ironcore.example' };
 
+/** SEED_PASSWORD from the seed; new test accounts use TEST_PASSWORD. */
+export const SEED_PASSWORD = 'orbit-demo-1234';
+export const TEST_PASSWORD = 'test-password-123';
+
+/** Logs in a seeded owner, or signs up a new email (the "Sign up" tab), through the real login screen. */
 export async function signIn(page: Page, email: string) {
+  const known = Object.values(SEED).includes(email);
   await page.goto('/login');
+  if (!known) await page.getByRole('tab', { name: 'Sign up' }).click();
   await page.getByLabel('Email address').fill(email);
-  await page.getByRole('button', { name: 'Email me a code' }).click();
-  const note = page.getByText(/Test mode: your code is \d{6}/);
-  const code = (await note.textContent())!.match(/\d{6}/)![0];
-  await page.getByLabel('Code').fill(code);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password').fill(known ? SEED_PASSWORD : TEST_PASSWORD);
+  await page.getByRole('button', { name: known ? 'Log in' : 'Create account', exact: true }).click();
   // Signed in once the app has left the login page (to The Bridge or onboarding).
   await page.waitForURL((u) => !u.pathname.startsWith('/login'));
 }

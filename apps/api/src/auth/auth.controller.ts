@@ -13,8 +13,7 @@ import { AuthService } from './auth.service';
 import { ClientIp, CurrentUser, Public } from './guards';
 import type { AuthUser } from './types';
 
-const CodeRequest = z.object({ email: z.string().min(1).max(254) });
-const CodeVerify = z.object({ email: z.string().min(1).max(254), code: z.string().regex(/^\d{6}$/) });
+const Credentials = z.object({ email: z.string().min(1).max(254), password: z.string().min(1).max(200) });
 const GoogleBody = z.object({ idToken: z.string().min(10) });
 const MePatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -27,18 +26,18 @@ export class AuthController {
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @Post('email/request')
-  requestCode(@Body(new ZodPipe(CodeRequest)) body: z.infer<typeof CodeRequest>) {
+  @Post('signup')
+  signUp(@Body(new ZodPipe(Credentials)) body: z.infer<typeof Credentials>, @ClientIp() ip: string) {
     ownSignInOnly();
-    return this.auth.requestCode(body.email);
+    return this.auth.signUp(body.email, body.password, ip);
   }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('email/verify')
-  verifyCode(@Body(new ZodPipe(CodeVerify)) body: z.infer<typeof CodeVerify>, @ClientIp() ip: string) {
+  @Post('login')
+  logIn(@Body(new ZodPipe(Credentials)) body: z.infer<typeof Credentials>, @ClientIp() ip: string) {
     ownSignInOnly();
-    return this.auth.verifyCode(body.email, body.code, ip);
+    return this.auth.logIn(body.email, body.password, ip);
   }
 
   @Public()

@@ -53,7 +53,7 @@ npm run dev:api
 npm run dev:web
 ```
 
-Open http://localhost:3000. In development the sign-in code is shown on screen (`OTP_DEV_ECHO=true`).
+Open http://localhost:3000 and log in as a sample owner (`meera@glowstudio.example` or `suresh@ironcore.example`) with the password `orbit-demo-1234` (`SEED_PASSWORD`), or sign up with any email.
 
 | Seeded account | Email |
 |---|---|
@@ -73,7 +73,7 @@ npm run test:e2e
 ```
 
 - `npm test` runs the shared unit tests and the API tests against the separate `orbit_test` database. That database is reset automatically.
-- `npm run test:e2e` needs the API on :4000 (seeded) and the web app on :3000. Start the API with `AI_PROVIDER=fake THROTTLE_DISABLED=true`. Each e2e run re-seeds the local sample businesses and clears sign-in code history (`apps/web/e2e/global-setup.ts`), so never point it at a real database.
+- `npm run test:e2e` needs the API on :4000 (seeded) and the web app on :3000. Start the API with `AI_PROVIDER=fake THROTTLE_DISABLED=true`. Each e2e run re-seeds the local sample businesses and removes businesses from earlier onboarding runs (`apps/web/e2e/global-setup.ts`), so never point it at a real database.
 
 ## Environment variables
 
@@ -90,8 +90,7 @@ npm run test:e2e
 | `WEB_ORIGIN` | Allowed CORS origins (comma-separated). |
 | `PUBLIC_BASE_URL` | Base of public business links and the QR code, e.g. `https://orbit.app`. |
 | `GOOGLE_CLIENT_ID` | Enables Google sign-in. |
-| `EMAIL_PROVIDER` | `dev` logs sign-in codes (local). Hosted deployments use Supabase Auth, which emails the codes. |
-| `OTP_DEV_ECHO` | Returns the sign-in code in the response (ignored in production). |
+| `SEED_PASSWORD` | Local password for the sample owners and admins created by the seed (development only). Hosted deployments use Supabase Auth: email + password with a confirmation email, or Google. |
 | `PLATFORM_ADMIN_EMAILS` | Email addresses that become platform admins. |
 | `THROTTLE_DISABLED` | Test/e2e only. |
 | `AUTH_PROVIDER`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_EMAILS` | `supabase` = sign-in by Supabase Auth (tokens checked against the project's signing keys; the secret only for legacy projects). Default `orbit` (local). |

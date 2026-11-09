@@ -49,11 +49,16 @@ describe('sign-in with Supabase Auth', () => {
     await app.close();
   });
 
-  it('links an existing owner by email, keeping their businesses', async () => {
-    const owned = await onboard(app, 'salon', 'Supa Salon'); // signs up with Orbit's own email codes (still on)
+  it('links an existing owner by a confirmed email, keeping their businesses', async () => {
+    const owned = await onboard(app, 'salon', 'Supa Salon'); // signs up with Orbit's own sign-in (still on)
     process.env.AUTH_PROVIDER = 'supabase';
     process.env.SUPABASE_URL = URL_;
-    const t = await token({ sub: '00000000-0000-4000-8000-000000000001', email: owned.owner.email.toUpperCase(), phone: '' });
+    // Not confirmed yet: no access to the existing account, and a plain-language reason.
+    const unconfirmed = await token({ sub: '00000000-0000-4000-8000-000000000009', email: owned.owner.email, user_metadata: { email_verified: false }, amr: [{ method: 'password' }] });
+    const denied = await http().get('/auth/me').set('authorization', `Bearer ${unconfirmed}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.error.code).toBe('email_not_verified');
+    const t = await token({ sub: '00000000-0000-4000-8000-000000000001', email: owned.owner.email.toUpperCase(), phone: '', user_metadata: { email_verified: true } });
     const me = await http().get('/auth/me').set('authorization', `Bearer ${t}`).expect(200);
     expect(me.body.user.id).toBe(owned.owner.userId);
     expect(me.body.businesses.map((b: any) => b.id)).toContain(owned.businessId);
@@ -89,10 +94,19 @@ describe('sign-in with Supabase Auth', () => {
     expect((await http().get('/auth/me').set('authorization', `Bearer ${forged}`)).status).toBe(401);
   });
 
-  it("turns Orbit's own phone-code sign-in off, while admin impersonation tokens keep working", async () => {
-    expect((await http().post('/auth/email/request').send({ email: 'someone@example.com' })).status).toBe(404);
+  it('treats Google and email-link sign-ins as proof of the email', async () => {
+    process.env.AUTH_PROVIDER = 'orbit'; // create the owner with Orbit's own sign-in, then switch back
+    const owned = await onboard(app, 'gym', 'Supa Gym');
+    process.env.AUTH_PROVIDER = 'supabase';
+    const t = await token({ sub: '00000000-0000-4000-8000-000000000010', email: owned.owner.email, amr: [{ method: 'oauth' }] });
+    expect((await http().get('/auth/me').set('authorization', `Bearer ${t}`).expect(200)).body.user.id).toBe(owned.owner.userId);
+  });
+
+  it("turns Orbit's own sign-in off, while admin impersonation tokens keep working", async () => {
+    expect((await http().post('/auth/login').send({ email: 'someone@example.com', password: 'whatever-123' })).status).toBe(404);
+    expect((await http().post('/auth/signup').send({ email: 'someone@example.com', password: 'whatever-123' })).status).toBe(404);
     expect((await http().post('/auth/google').send({ idToken: 'abcdefghijk' })).status).toBe(404);
-    const admin = await token({ sub: '00000000-0000-4000-8000-000000000006', email: 'admin@orbit.test' });
+    const admin = await token({ sub: '00000000-0000-4000-8000-000000000006', email: 'admin@orbit.test', user_metadata: { email_verified: true } });
     const owned = await http().get('/admin/businesses').set('authorization', `Bearer ${admin}`).expect(200);
     const imp = await http().post(`/admin/businesses/${owned.body[0].id}/impersonate`).set('authorization', `Bearer ${admin}`).expect(201);
     await api(app, imp.body.token, owned.body[0].id).get('/bridge').expect(200);

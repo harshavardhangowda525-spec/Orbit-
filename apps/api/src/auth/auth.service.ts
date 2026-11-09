@@ -1,18 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { toE164 } from '@orbit/shared';
-import { auth, config } from '../config';
+import { auth } from '../config';
 import { DbService } from '../db/db.service';
 import { AppError, badRequest } from '../common/errors';
 import { AuditService } from '../audit/audit.service';
-import { CODE_MAILER, isEmail, type CodeMailer } from './mailer';
+import { checkPassword, hashPassword, PASSWORD_MAX, PASSWORD_MIN } from './password';
 import { GOOGLE_VERIFIER, type GoogleVerifier } from './google';
 import type { JwtPayload } from './types';
+import type { SupabaseClaims } from './supabase';
 
-const OTP_TTL_MIN = 5;
-const OTP_MAX_ATTEMPTS = 5;
-const OTP_MAX_PER_HOUR = 5;
+export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length <= 254;
 
 @Injectable()
 export class AuthService {
@@ -20,13 +18,8 @@ export class AuthService {
     private readonly db: DbService,
     private readonly jwt: JwtService,
     private readonly audit: AuditService,
-    @Inject(CODE_MAILER) private readonly mailer: CodeMailer,
     @Inject(GOOGLE_VERIFIER) private readonly google: GoogleVerifier,
   ) {}
-
-  private hash(email: string, code: string) {
-    return createHmac('sha256', config.jwtSecret).update(`email:${email}:${code}`).digest('hex');
-  }
 
   private normEmail(raw: string) {
     const email = raw.trim().toLowerCase();
@@ -34,53 +27,34 @@ export class AuthService {
     return email;
   }
 
-  /** Orbit's own sign-in (local development): a 6-digit code sent by email. */
-  async requestCode(rawEmail: string) {
-    const email = this.normEmail(rawEmail);
-    const recent = await this.db.one<{ n: string }>(
-      `SELECT count(*) AS n FROM otp_codes WHERE email = $1 AND created_at > now() - interval '1 hour'`,
-      [email],
-    );
-    if (Number(recent?.n ?? 0) >= OTP_MAX_PER_HOUR) {
-      throw new AppError(429, 'too_many_requests', 'Too many codes asked for this email. Please try again in an hour.');
-    }
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    await this.db.q(
-      `INSERT INTO otp_codes (email, code_hash, expires_at) VALUES ($1, $2, now() + make_interval(mins => $3))`,
-      [email, this.hash(email, code), OTP_TTL_MIN],
-    );
-    await this.mailer.sendCode(email, code);
-    return { email, expiresInSec: OTP_TTL_MIN * 60, ...(config.otpDevEcho ? { devCode: code } : {}) };
+  private checkLength(password: string) {
+    if (password.length < PASSWORD_MIN) throw badRequest('password_short', `Your password needs at least ${PASSWORD_MIN} characters.`);
+    if (password.length > PASSWORD_MAX) throw badRequest('password_long', `Your password can have at most ${PASSWORD_MAX} characters.`);
   }
 
-  async verifyCode(rawEmail: string, code: string, ip?: string) {
+  /** Orbit's own sign-up (local development; hosted sites use Supabase Auth). */
+  async signUp(rawEmail: string, password: string, ip?: string) {
     const email = this.normEmail(rawEmail);
-    const row = await this.db.one<{ id: string; code_hash: string; attempts: number }>(
-      `SELECT id, code_hash, attempts FROM otp_codes
-       WHERE email = $1 AND consumed_at IS NULL AND expires_at > now()
-       ORDER BY created_at DESC LIMIT 1`,
-      [email],
+    this.checkLength(password);
+    const exists = await this.db.one(`SELECT 1 FROM users WHERE email = $1`, [email]);
+    if (exists) throw new AppError(409, 'account_exists', 'An account with this email already exists. Please log in.');
+    const user = await this.db.one(
+      `INSERT INTO users (email, password_hash, auth_providers, is_platform_admin, last_login_at) VALUES ($1, $2, '[{"provider":"password"}]', $3, now()) RETURNING *`,
+      [email, await hashPassword(password), auth.adminEmails.includes(email)],
     );
-    const wrong = badRequest('otp_wrong', 'That code is not right or has expired. Please try again.');
-    if (!row || row.attempts >= OTP_MAX_ATTEMPTS) throw wrong;
-    const a = Buffer.from(row.code_hash, 'hex');
-    const b = Buffer.from(this.hash(email, code.trim()), 'hex');
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      await this.db.q(`UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
-      throw wrong;
-    }
-    await this.db.q(`UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, [row.id]);
+    await this.audit.write({ actorId: user.id, action: 'auth.sign_up', entity: 'user', entityId: user.id, after: { method: 'password' }, ip });
+    return { token: this.issue({ sub: user.id }), user: publicUser(user), isNew: true };
+  }
 
-    const isAdmin = auth.adminEmails.includes(email);
-    const existing = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
-    const user = existing
-      ? await this.db.one(`UPDATE users SET last_login_at = now(), is_platform_admin = is_platform_admin OR $2 WHERE id = $1 RETURNING *`, [existing.id, isAdmin])
-      : await this.db.one(
-          `INSERT INTO users (email, auth_providers, is_platform_admin, last_login_at) VALUES ($1, '[{"provider":"email"}]', $2, now()) RETURNING *`,
-          [email, isAdmin],
-        );
-    await this.audit.write({ actorId: user.id, action: 'auth.sign_in', entity: 'user', entityId: user.id, after: { method: 'email_code' }, ip });
-    return { token: this.issue({ sub: user.id }), user: publicUser(user), isNew: !existing };
+  async logIn(rawEmail: string, password: string, ip?: string) {
+    const email = this.normEmail(rawEmail);
+    const row = await this.db.one<{ id: string; password_hash: string | null }>(`SELECT id, password_hash FROM users WHERE email = $1`, [email]);
+    if (!(await checkPassword(password, row?.password_hash))) {
+      throw new AppError(401, 'wrong_password', 'That email and password do not match. Please try again.');
+    }
+    const user = await this.db.one(`UPDATE users SET last_login_at = now(), is_platform_admin = is_platform_admin OR $2 WHERE id = $1 RETURNING *`, [row!.id, auth.adminEmails.includes(email)]);
+    await this.audit.write({ actorId: user.id, action: 'auth.sign_in', entity: 'user', entityId: user.id, after: { method: 'password' }, ip });
+    return { token: this.issue({ sub: user.id }), user: publicUser(user), isNew: false };
   }
 
   async signInWithGoogle(idToken: string, ip?: string) {
@@ -111,11 +85,17 @@ export class AuthService {
    * email (so people who already exist, e.g. seeded owners, keep their businesses),
    * otherwise creates the user.
    */
-  async userForSupabase(c: { sub: string; email: string | null; phone: string | null; name: string | null }): Promise<string> {
+  async userForSupabase(c: SupabaseClaims): Promise<string> {
     const linked = await this.db.one<{ id: string }>(`SELECT id FROM users WHERE supabase_uid = $1`, [c.sub]);
     if (linked) return linked.id;
     const phone = c.phone ? toE164(c.phone.startsWith('+') ? c.phone : `+${c.phone}`) : null;
-    const isAdmin = !!c.email && auth.adminEmails.includes(c.email);
+    // Taking over an existing Orbit account (its businesses, admin rights) needs proof of owning that inbox or number.
+    const taken = await this.db.one(
+      `SELECT 1 FROM users WHERE supabase_uid IS NULL AND (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND email = $2))`,
+      [phone, c.email],
+    );
+    if (taken && !c.verified) throw new AppError(403, 'email_not_verified', 'Please confirm your email first. Check your inbox for the link.');
+    const isAdmin = !!c.email && c.verified && auth.adminEmails.includes(c.email);
     const existing = await this.db.one<{ id: string }>(
       `SELECT id FROM users WHERE supabase_uid IS NULL AND (($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND email = $2)) ORDER BY (phone = $1) DESC NULLS LAST LIMIT 1`,
       [phone, c.email],

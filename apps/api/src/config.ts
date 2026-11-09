@@ -29,9 +29,6 @@ export const config = {
   webOrigins: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((s) => s.trim()),
   publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
-  get otpDevEcho() {
-    return process.env.OTP_DEV_ECHO === 'true' && config.env !== 'production';
-  },
 };
 
 if (config.env === 'production' && config.jwtSecret.startsWith('dev-only')) {

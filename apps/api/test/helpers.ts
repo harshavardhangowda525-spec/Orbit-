@@ -29,10 +29,17 @@ export function newEmail() {
 /** Demo accounts created by the seed. */
 export const SEED = { salon: 'meera@glowstudio.example', gym: 'suresh@ironcore.example', admin: 'admin@orbit.test' };
 
-export async function signIn(app: NestExpressApplication, email = newEmail()) {
-  const r1 = await request(app.getHttpServer()).post('/auth/email/request').send({ email }).expect(201);
-  const r2 = await request(app.getHttpServer()).post('/auth/email/verify').send({ email, code: r1.body.devCode }).expect(201);
-  return { token: r2.body.token as string, userId: r2.body.user.id as string, email };
+export const TEST_PASSWORD = 'test-password-123';
+/** Seeded accounts use SEED_PASSWORD (default below). */
+export const SEED_PASSWORD = 'orbit-demo-1234';
+
+/** Logs in, or signs up if the account does not exist yet (seeded addresses use SEED_PASSWORD). */
+export async function signIn(app: NestExpressApplication, email = newEmail(), password?: string) {
+  const s = app.getHttpServer();
+  const pw = password ?? (Object.values(SEED).includes(email) ? SEED_PASSWORD : TEST_PASSWORD);
+  let r = await request(s).post('/auth/login').send({ email, password: pw });
+  if (r.status !== 201) r = await request(s).post('/auth/signup').send({ email, password: pw }).expect(201);
+  return { token: r.body.token as string, userId: r.body.user.id as string, email };
 }
 
 export function api(app: NestExpressApplication, token: string, businessId?: string) {

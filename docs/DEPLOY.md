@@ -63,23 +63,39 @@ Upgrade both before real businesses use Orbit.
 2. Copy the **Project URL**, for example `https://abcdefghijklm.supabase.co`.
 3. Copy the **publishable** key. Older projects call it the **anon public** key. This key is meant to be public.
 
-### A5. Turn on email codes
-Orbit signs owners in with a 6-digit code sent by email. Email sign-in is on by default in Supabase. One template change makes it send a code instead of a link:
+### A5. Email + password sign-in (with Resend)
+Owners log in with their email and a password, or with Google (A6). New owners sign up on the same screen and confirm their email with a link.
 
-1. Go to **Authentication** → **Emails** (on some projects: **Email Templates**) → **Magic Link**.
-2. Replace the message body with:
-   ```html
-   <h2>Your Orbit sign-in code</h2>
-   <p>Enter this code in Orbit: <strong style="font-size:24px;letter-spacing:4px">{{ .Token }}</strong></p>
-   <p>It expires in one hour. If you did not ask for it, you can ignore this email.</p>
-   ```
-3. Set **Subject** to `Your Orbit sign-in code`, then click **Save**.
-4. Do the same for the **Confirm signup** template, so new owners also get a code.
-5. Check **Authentication** → **Sign In / Providers** → **Email**:
-   - **Enable Email provider** is on.
-   - Switch **Confirm email** on, so that only people who own the inbox can sign in.
+**1. Turn on email + password**
+1. Go to **Authentication** → **Sign In / Providers** → **Email**.
+2. **Enable Email provider:** on.
+3. **Confirm email:** on. Keep this on: Orbit only links a sign-in to an existing account (and its businesses) once the email is confirmed.
+4. **Minimum password length:** `8`. Click **Save**.
 
-> **Who can get emails:** Supabase's built-in email sender only delivers to members of your Supabase team, and only a few emails per hour. That's enough for you to test the preview. Before other business owners sign in, add your own email service under **Project Settings** → **Authentication** → **SMTP Settings** (for example Resend, Brevo, SendGrid or Zoho Mail).
+**2. Tell Supabase where your site lives** (otherwise email links open `localhost`)
+1. Go to **Authentication** → **URL Configuration**.
+2. **Site URL:** your orbit-web address, for example `https://orbit-web-xxxx.onrender.com`.
+3. **Redirect URLs** → **Add URL:** the same address followed by `/login`, for example `https://orbit-web-xxxx.onrender.com/login`. Click **Save URLs**.
+
+**3. Send emails through Resend**
+Supabase's built-in sender only delivers a few emails an hour, and only to your own team. Resend delivers to everyone.
+1. In **resend.com**: go to **Domains** → **Add Domain**, add your domain and create the DNS records it shows, then wait for **Verified**. (Without a domain you can only send to your own Resend login email, from `onboarding@resend.dev`.)
+2. In Resend: **API Keys** → **Create API Key** → permission **Sending access** → copy it (starts with `re_`).
+3. In Supabase: **Project Settings** → **Authentication** → **SMTP Settings** → **Enable Custom SMTP**:
+
+   | Field | Value |
+   |---|---|
+   | Sender email | `no-reply@yourdomain.com` (an address on your verified domain) |
+   | Sender name | `Orbit` |
+   | Host | `smtp.resend.com` |
+   | Port | `465` |
+   | Username | `resend` |
+   | Password | your Resend API key |
+
+4. Click **Save**. Then, under **Authentication** → **Rate Limits**, raise **emails per hour** (for example to `100`).
+
+**4. Email templates**
+Keep the default **Confirm signup** and **Reset password** templates: they contain a link (`{{ .ConfirmationURL }}`) that brings the owner back to Orbit. If you changed them earlier to show a code, put the link back.
 
 ### A6. (Optional) Google sign-in
 1. Go to **console.cloud.google.com**, open **APIs & Services**, then **OAuth consent screen**.
@@ -145,18 +161,15 @@ Render may add letters to a name if it's already taken, for example `orbit-web-x
    - On **orbit-web**: go to **Environment** and update `ORBIT_API_URL` and `API_INTERNAL_URL` to the real API URL. Click **Save, rebuild, and deploy**.
 
 ### B4. Tell Supabase where the website lives
-1. In Supabase, go to **Authentication** → **URL Configuration**.
-2. Set **Site URL** to your web URL, for example `https://orbit-web.onrender.com`.
-3. Under **Redirect URLs**, click **Add URL** and enter `https://orbit-web.onrender.com/login`.
-4. Click **Save**.
+Now that you know the real orbit-web address, do step **2** of A5 (Site URL and Redirect URLs) if you haven't yet.
 
 ### B5. Try it
 1. Open your **orbit-web** URL. The first visit after a sleep takes about a minute.
-2. Click **Start free**, enter the email you put in `SEED_OWNER_EMAIL`, and click **Email me a code**.
-3. Type the 6-digit code from your inbox. You'll land on **The Bridge** for Glow Studio as Meera.
+2. Click **Start free**, open the **Sign up** tab, enter the email you put in `SEED_OWNER_EMAIL` and choose a password.
+3. Open the confirmation email and click the link, then log in. You'll land on **The Bridge** for Glow Studio as Meera.
 4. Customer page: open `https://<orbit-web>/glow-studio`. You can book there or chat with Aria.
 5. New business: sign out, then sign in with another email or with Google (if A6 is done) to set up your own business.
-   - Other people's emails need your own email service (see the note in A5).
+   - Other people's emails need Resend set up (A5, step 3).
 
 ---
 

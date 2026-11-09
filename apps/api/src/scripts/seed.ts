@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { hashPassword } from '../auth/password';
 import { DEFAULT_PLANS, TEMPLATES, localParts, type BusinessType } from '@orbit/shared';
 import { auth, config, pgSsl } from '../config';
 import { Tx } from '../db/db.service';
@@ -81,12 +82,19 @@ const GYM: SampleBusiness = {
   ],
 };
 
+/** Local password for sample accounts. Never set in production (hosted sign-in is Supabase Auth). */
+async function seedPasswordHash(): Promise<string | null> {
+  if (process.env.NODE_ENV === 'production') return null;
+  return hashPassword(process.env.SEED_PASSWORD || 'orbit-demo-1234');
+}
+
 async function upsertUser(tx: Tx, email: string, name: string, admin = false) {
   return tx.one<{ id: string }>(
-    `INSERT INTO users (email, name, is_platform_admin, auth_providers) VALUES ($1, $2, $3, '[{"provider":"email"}]')
-     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, is_platform_admin = users.is_platform_admin OR EXCLUDED.is_platform_admin
+    `INSERT INTO users (email, name, is_platform_admin, auth_providers, password_hash) VALUES ($1, $2, $3, '[{"provider":"password"}]', $4)
+     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, is_platform_admin = users.is_platform_admin OR EXCLUDED.is_platform_admin,
+       password_hash = COALESCE(users.password_hash, EXCLUDED.password_hash)
      RETURNING id`,
-    [email.toLowerCase(), name, admin],
+    [email.toLowerCase(), name, admin, await seedPasswordHash()],
   ) as Promise<{ id: string }>;
 }
 
