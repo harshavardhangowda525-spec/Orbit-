@@ -10,6 +10,16 @@ export async function migrate(url = config.databaseMigrationUrl, quiet = false) 
   const client = new Client({ connectionString: url, ssl: pgSsl() });
   await client.connect();
   try {
+    // Say plainly which database user this is and whether it may create tables (the usual hosting mistake).
+    const who = (await client.query<{ u: string; can: boolean }>(`SELECT current_user AS u, has_schema_privilege(current_user, 'public', 'CREATE') AS can`)).rows[0];
+    if (!who.can) {
+      throw new Error(
+        `DATABASE_MIGRATION_URL connects as "${who.u}", which cannot create tables. ` +
+          (who.u === 'orbit_migrator'
+            ? 'Run infra/db/supabase-setup.sql again (GRANT USAGE, CREATE ON SCHEMA public TO orbit_migrator).'
+            : 'It must use the orbit_migrator user (postgresql://orbit_migrator.<project>:...@...:5432/postgres).'),
+      );
+    }
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
     const done = new Set((await client.query<{ name: string }>(`SELECT name FROM schema_migrations`)).rows.map((r) => r.name));
     const dir = join(__dirname, '..', '..', 'migrations');
