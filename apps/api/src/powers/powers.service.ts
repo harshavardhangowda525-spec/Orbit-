@@ -19,15 +19,16 @@ import { logger } from '../logger';
 import { open, seal } from './crypto';
 import * as google from './google';
 import { metaConfig } from '../channels/meta';
+import { msConfig } from '../channels/microsoft';
 
-export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' }[] = [
+export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' | 'microsoft' | 'sms' }[] = [
   { type: 'google_calendar', group: 'calendar', oauth: 'google' },
   { type: 'gmail', group: 'messaging', oauth: 'google' },
   { type: 'whatsapp', group: 'messaging', oauth: null, form: 'meta' },
   { type: 'instagram', group: 'messaging', oauth: null, form: 'meta' },
   { type: 'messenger', group: 'messaging', oauth: null, form: 'meta' },
-  { type: 'outlook', group: 'messaging', oauth: null },
-  { type: 'sms', group: 'messaging', oauth: null },
+  { type: 'outlook', group: 'messaging', oauth: null, form: 'microsoft' },
+  { type: 'sms', group: 'messaging', oauth: null, form: 'sms' },
   { type: 'phone', group: 'messaging', oauth: null },
   { type: 'outlook_calendar', group: 'calendar', oauth: null },
   { type: 'razorpay', group: 'payments', oauth: null },
@@ -109,7 +110,7 @@ export class PowersService implements OnModuleInit {
       return {
         type: p.type,
         group: p.group,
-        available: p.form === 'meta' ? metaConfig.ready : p.oauth !== null && google.googleConfigured(),
+        available: p.form === 'meta' ? metaConfig.ready : p.form === 'microsoft' ? msConfig.ready : p.form === 'sms' ? true : p.oauth !== null && google.googleConfigured(),
         form: p.form ?? null,
         onPlan: planAllowsPower(plan!.features, p.type),
         connection: c ? { id: c.id, status: c.status, account: c.account_label, error: c.error, scopes: c.scopes, lastSyncAt: c.last_sync_at, settings: c.settings ?? {} } : null,

@@ -95,7 +95,7 @@ const GROUPS = ['calendar', 'messaging', 'payments', 'records', 'presence'];
 /** Powers: what each service lets Orbit do, and one tap to connect or disconnect. */
 export function PowersView() {
   const { t } = useI18n();
-  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
   const [form, setForm] = useState<string | null>(null);
   const { data: metaSetup } = useLoad<MetaSetup>('/channels/meta/setup');
   const [pagePick, setPagePick] = useState<{ selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' } | null>(null);
@@ -127,7 +127,7 @@ export function PowersView() {
     setBusy(type);
     setMsg(null);
     try {
-      const r = await api<{ url: string }>(`/powers/${type}/connect`, { body: {} });
+      const r = await api<{ url: string }>(type === 'outlook' ? '/channels/outlook/connect' : `/powers/${type}/connect`, { body: {} });
       window.location.href = r.url;
     } catch (e) {
       setMsg((e as ApiError).message);
@@ -166,7 +166,7 @@ export function PowersView() {
                   <button className="btn small" disabled={busy === p.type} onClick={() => disconnect(p.connection!.id, p.type)}>{t('powers.disconnect')}</button>
                 ) : p.available ? (
                   p.onPlan ? (
-                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
+                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : p.form === 'sms' ? setForm(form === 'sms' ? null : 'sms') : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
                   ) : (
                     <span className="chip">{t('powers.upgrade')}</span>
                   )
@@ -180,7 +180,8 @@ export function PowersView() {
                   tpl ? <WhatsAppTemplateForm current={(p.connection as any).settings ?? {}} onDone={() => { setTpl(false); reload(); }} />
                     : <button className="link-btn small advanced" onClick={() => setTpl(true)}>{(p.connection as any).settings?.templateName ? t('meta.template_set', { name: (p.connection as any).settings.templateName }) : t('meta.template_add')}</button>
                 )}
-                {form === p.type && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
+                {form === p.type && p.form === 'meta' && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
+                {form === 'sms' && p.type === 'sms' && <SmsConnectForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {pagePick && (pagePick.want === p.type) && (
                   <PagePicker pick={pagePick} allowMessenger={onPlan('messenger')} allowInstagram={onPlan('instagram')} onDone={() => { setPagePick(null); reload(); }} onCancel={() => setPagePick(null)} />
                 )}
@@ -403,6 +404,54 @@ function WhatsAppTemplateForm({ current, onDone }: { current: { templateName?: s
       <label className="field"><span>{t('meta.f.template_lang')}</span><input className="input" value={lang} onChange={(e) => setLang(e.target.value)} /></label>
       {err && <p className="error">{err}</p>}
       <div className="row"><button className="btn primary">{t('meta.save')}</button><button type="button" className="btn" onClick={onDone}>{t('meta.cancel')}</button></div>
+    </form>
+  );
+}
+
+/** SMS in India: MSG91 with a DLT-approved template. */
+function SmsConnectForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [v, setV] = useState<Record<string, string>>({ variables: '4' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fields: { key: string; label: string; hint: string; secret?: boolean }[] = [
+    { key: 'authKey', label: 'sms.f.auth_key', hint: 'sms.h.auth_key', secret: true },
+    { key: 'senderId', label: 'sms.f.sender', hint: 'sms.h.sender' },
+    { key: 'templateId', label: 'sms.f.template', hint: 'sms.h.template' },
+    { key: 'variables', label: 'sms.f.variables', hint: 'sms.h.variables' },
+  ];
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      await api('/channels/sms/connect', { body: { ...v, variables: Number(v.variables || 4) } });
+      onDone();
+    } catch (x) {
+      setErr((x as ApiError).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="meta-form stack" onSubmit={submit} data-testid="connect-sms">
+      <details className="meta-help">
+        <summary>{t('meta.help.title')}</summary>
+        <ol>{t('sms.help', { var: '{#var#}' }).split('\n').map((line, i) => <li key={i}>{line}</li>)}</ol>
+      </details>
+      {fields.map((f) => (
+        <label key={f.key} className="field">
+          <span>{t(f.label)}</span>
+          <input className="input" type={f.secret ? 'password' : 'text'} inputMode={f.key === 'variables' ? 'numeric' : undefined} autoComplete="off" spellCheck={false} value={v[f.key] ?? ''} required
+            onChange={(e) => setV({ ...v, [f.key]: e.target.value })} />
+          <small className="muted">{t(f.hint, { var: '{#var#}' })}</small>
+        </label>
+      ))}
+      <p className="small muted">{t('sms.one_way')}</p>
+      {err && <p className="error">{err}</p>}
+      <div className="row">
+        <button className="btn primary" disabled={busy}>{busy ? t('common.wait') : t('powers.connect')}</button>
+        <button type="button" className="btn" onClick={onCancel}>{t('meta.cancel')}</button>
+      </div>
     </form>
   );
 }

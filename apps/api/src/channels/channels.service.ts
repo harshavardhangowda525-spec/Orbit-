@@ -38,7 +38,7 @@ export interface OutboundRow {
 export type ChannelSender = (tx: Tx, m: OutboundRow) => Promise<{ channelMessageId: string }>;
 
 /** Order Orbit tries channels in when the preferred one cannot reach the customer. */
-const FALLBACK_ORDER = ['whatsapp', 'sms', 'gmail', 'web_chat'];
+const FALLBACK_ORDER = ['whatsapp', 'sms', 'gmail', 'outlook', 'web_chat'];
 
 /**
  * Routes outbound messages to the best connected channel. Adapters register
@@ -69,7 +69,7 @@ export class ChannelsService {
   async deliver(tx: Tx, preferred: string, m: OutboundMessage): Promise<DeliveryResult> {
     const order = [preferred, ...FALLBACK_ORDER.filter((c) => c !== preferred)];
     for (const ch of order) {
-      if (m.customer.opted_out_at?.[ch === 'gmail' ? 'email' : ch]) continue;
+      if (m.customer.opted_out_at?.[ch === 'gmail' || ch === 'outlook' ? 'email' : ch]) continue;
       const a = this.adapters.get(ch);
       if (!a || !(await a.canReach(tx, m))) continue;
       const r = await a.send(tx, m);

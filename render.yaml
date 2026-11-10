@@ -59,6 +59,13 @@ services:
         sync: false
       - key: META_VERIFY_TOKEN
         sync: false
+      # Outlook email: Orbit's Microsoft app (docs/DEPLOY.md).
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
       # One-click connect (Embedded Signup / Facebook Login for Business configurations).
       - key: META_APP_ID
         sync: false

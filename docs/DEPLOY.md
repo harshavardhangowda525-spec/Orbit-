@@ -201,6 +201,20 @@ While the app is in **Development** mode only people with a role on the app can 
 **5. Each business connects**
 In Orbit: **The Bridge → Powers → WhatsApp / Instagram / Messenger → Connect**. The form explains where to find each ID and token. WhatsApp can also take an approved **message template** (body `{{1}}`) so Orbit can send reminders to customers who last wrote more than 24 hours ago.
 
+## Outlook email (Microsoft)
+One Microsoft app for all businesses; each owner then clicks **Powers → Outlook → Connect** and signs in.
+1. Go to **portal.azure.com** → **Microsoft Entra ID** → **App registrations** → **New registration**.
+   - **Name:** `Orbit`
+   - **Supported account types:** *Accounts in any organizational directory and personal Microsoft accounts*
+   - **Redirect URI:** platform **Web**, `https://<your orbit-api address>/powers/oauth/microsoft/callback`
+2. Copy the **Application (client) ID**.
+3. **Certificates & secrets** → **New client secret** → copy its **Value**.
+4. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated**: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`.
+5. Render → orbit-api → Environment: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` (the redirect URI from step 1).
+
+## SMS (India, DLT)
+Each business connects its own MSG91 account from **Powers → SMS** (the form explains DLT registration). Nothing to set on the server. SMS is one-way (reminders and updates); replies come in on WhatsApp.
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |

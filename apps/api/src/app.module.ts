@@ -20,6 +20,7 @@ import { KnowledgeModule } from './knowledge/knowledge.service';
 import { BriefingModule } from './briefing/briefing.service';
 import { PowersModule } from './powers/powers.service';
 import { MetaChannelsModule } from './channels/meta.service';
+import { EmailSmsModule } from './channels/email-sms.service';
 
 @Controller()
 class HealthController {
@@ -42,6 +43,8 @@ class HealthController {
     AiModule,
     BriefingModule,
     PowersModule,
+    // Before MetaChannelsModule: its /channels/:type/connect would otherwise catch sms/outlook.
+    EmailSmsModule,
     MetaChannelsModule,
     AuditModule,
     AuthModule,
