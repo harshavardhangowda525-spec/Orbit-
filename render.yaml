@@ -59,6 +59,13 @@ services:
         sync: false
       - key: META_VERIFY_TOKEN
         sync: false
+      # One-click connect (Embedded Signup / Facebook Login for Business configurations).
+      - key: META_APP_ID
+        sync: false
+      - key: META_WA_CONFIG_ID
+        sync: false
+      - key: META_LOGIN_CONFIG_ID
+        sync: false
       # Demo businesses (Glow Studio, IronCore Gym) are for local development only.
       - key: SEED_DEMO
         value: "false"

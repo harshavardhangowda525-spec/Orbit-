@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { pagesLogin, whatsappSignup, type MetaSetup } from '@/lib/meta';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import type { BridgeData } from '@/lib/bridge-types';
@@ -96,6 +97,30 @@ export function PowersView() {
   const { t } = useI18n();
   const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
   const [form, setForm] = useState<string | null>(null);
+  const { data: metaSetup } = useLoad<MetaSetup>('/channels/meta/setup');
+  const [pagePick, setPagePick] = useState<{ selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' } | null>(null);
+  const [tpl, setTpl] = useState(false);
+  const onPlan = (type: string) => !!data?.find((x) => x.type === type)?.onPlan;
+  const oneClick = (type: string) => !!metaSetup && (type === 'whatsapp' ? metaSetup.oneClick.whatsapp : metaSetup.oneClick.pages);
+  const connectMeta = async (type: string) => {
+    setBusy(type);
+    setMsg(null);
+    try {
+      if (type === 'whatsapp') {
+        const r = await whatsappSignup(metaSetup!);
+        await api('/channels/whatsapp/signup', { body: r });
+        reload();
+      } else {
+        const code = await pagesLogin(metaSetup!);
+        const r = await api<{ selection: string; pages: any[] }>('/channels/pages/login', { body: { code } });
+        setPagePick({ ...r, want: type as 'messenger' | 'instagram' });
+      }
+    } catch (e) {
+      if ((e as Error).message !== 'cancelled') setMsg((e as ApiError).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const connect = async (type: string) => {
@@ -141,14 +166,24 @@ export function PowersView() {
                   <button className="btn small" disabled={busy === p.type} onClick={() => disconnect(p.connection!.id, p.type)}>{t('powers.disconnect')}</button>
                 ) : p.available ? (
                   p.onPlan ? (
-                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? setForm(form === p.type ? null : p.type) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
+                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
                   ) : (
                     <span className="chip">{t('powers.upgrade')}</span>
                   )
                 ) : (
                   <span className="chip">{p.connection?.status === 'pending' ? t('powers.pending') : t('powers.soon')}</span>
                 )}
+                {p.form === 'meta' && oneClick(p.type) && p.connection?.status !== 'connected' && p.available && p.onPlan && form !== p.type && (
+                  <button className="link-btn small advanced" onClick={() => setForm(p.type)}>{t('meta.advanced')}</button>
+                )}
+                {p.type === 'whatsapp' && p.connection?.status === 'connected' && (
+                  tpl ? <WhatsAppTemplateForm current={(p.connection as any).settings ?? {}} onDone={() => { setTpl(false); reload(); }} />
+                    : <button className="link-btn small advanced" onClick={() => setTpl(true)}>{(p.connection as any).settings?.templateName ? t('meta.template_set', { name: (p.connection as any).settings.templateName }) : t('meta.template_add')}</button>
+                )}
                 {form === p.type && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
+                {pagePick && (pagePick.want === p.type) && (
+                  <PagePicker pick={pagePick} allowMessenger={onPlan('messenger')} allowInstagram={onPlan('instagram')} onDone={() => { setPagePick(null); reload(); }} onCancel={() => setPagePick(null)} />
+                )}
               </div>
             ))}
           </div>
@@ -300,6 +335,74 @@ function MetaConnectForm({ type, onDone, onCancel }: { type: MetaType; onDone: (
         <button className="btn primary" disabled={busy}>{busy ? t('common.wait') : t('powers.connect')}</button>
         <button type="button" className="btn" onClick={onCancel}>{t('meta.cancel')}</button>
       </div>
+    </form>
+  );
+}
+
+/** After Facebook Login: choose the Page and which of its channels to connect. */
+function PagePicker({ pick, allowMessenger, allowInstagram, onDone, onCancel }: {
+  pick: { selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' };
+  allowMessenger: boolean; allowInstagram: boolean; onDone: () => void; onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const [pageId, setPageId] = useState(pick.pages[0]?.id ?? '');
+  const page = pick.pages.find((x) => x.id === pageId);
+  const [messenger, setMessenger] = useState(allowMessenger && pick.want === 'messenger');
+  const [instagram, setInstagram] = useState(allowInstagram && (pick.want === 'instagram' || !!pick.pages[0]?.instagram));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api('/channels/pages/connect', { body: { selection: pick.selection, pageId, messenger, instagram: instagram && !!page?.instagram } });
+      onDone();
+    } catch (e) {
+      setErr((e as ApiError).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="meta-form stack" data-testid="page-picker">
+      <b>{t('meta.pick_page')}</b>
+      {pick.pages.map((pg) => (
+        <label key={pg.id} className="check-line">
+          <input type="radio" name="page" checked={pageId === pg.id} onChange={() => setPageId(pg.id)} />
+          <span>{pg.name}{pg.instagram?.username ? ` · @${pg.instagram.username}` : ''}</span>
+        </label>
+      ))}
+      <label className="check-line"><input type="checkbox" checked={messenger} disabled={!allowMessenger} onChange={(e) => setMessenger(e.target.checked)} /> <span>{t('power.messenger')}{allowMessenger ? '' : ` (${t('powers.upgrade')})`}</span></label>
+      <label className="check-line"><input type="checkbox" checked={instagram && !!page?.instagram} disabled={!allowInstagram || !page?.instagram} onChange={(e) => setInstagram(e.target.checked)} /> <span>{t('power.instagram')}{!page?.instagram ? ` (${t('meta.no_instagram')})` : !allowInstagram ? ` (${t('powers.upgrade')})` : ''}</span></label>
+      {err && <p className="error">{err}</p>}
+      <div className="row">
+        <button className="btn primary" disabled={busy || (!messenger && !(instagram && page?.instagram))} onClick={go}>{busy ? t('common.wait') : t('powers.connect')}</button>
+        <button className="btn" onClick={onCancel}>{t('meta.cancel')}</button>
+      </div>
+    </div>
+  );
+}
+
+/** The approved WhatsApp template Orbit uses after the 24-hour window (reminders, follow-ups). */
+function WhatsAppTemplateForm({ current, onDone }: { current: { templateName?: string; templateLanguage?: string }; onDone: () => void }) {
+  const { t } = useI18n();
+  const [name, setName] = useState(current.templateName ?? '');
+  const [lang, setLang] = useState(current.templateLanguage ?? 'en');
+  const [err, setErr] = useState<string | null>(null);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api('/channels/whatsapp/settings', { body: { templateName: name, templateLanguage: lang } });
+      onDone();
+    } catch (x) {
+      setErr((x as ApiError).message);
+    }
+  };
+  return (
+    <form className="meta-form stack" onSubmit={save}>
+      <label className="field"><span>{t('meta.f.template')}</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /><small className="muted">{t('meta.h.template', { var: '{{1}}' })}</small></label>
+      <label className="field"><span>{t('meta.f.template_lang')}</span><input className="input" value={lang} onChange={(e) => setLang(e.target.value)} /></label>
+      {err && <p className="error">{err}</p>}
+      <div className="row"><button className="btn primary">{t('meta.save')}</button><button type="button" className="btn" onClick={onDone}>{t('meta.cancel')}</button></div>
     </form>
   );
 }

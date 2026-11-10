@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Injectable, Module, OnModuleInit, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { planAllowsPower, type PlanFeatures } from '@orbit/shared';
 import { DbService, type Tx } from '../db/db.service';
@@ -28,6 +29,9 @@ const START = /^\s*(start|unstop|subscribe)\s*$/i;
 
 interface Creds {
   token: string;
+  /** WhatsApp account (one-click) and the registration PIN Orbit set. */
+  wabaId?: string;
+  pin?: string;
   /** WhatsApp phone_number_id, Facebook page id, or Instagram account id: where webhooks come from. */
   accountId: string;
   /** Page that sends Messenger / Instagram replies. */
@@ -81,9 +85,7 @@ export class MetaChannelsService implements OnModuleInit {
   // ---------- connecting ----------
 
   async connect(t: Tenant, type: MetaChannel, raw: unknown) {
-    if (!meta.metaConfig.ready) throw badRequest('power_not_configured', "Orbit's Meta app is not set up on this server yet (META_APP_SECRET and META_VERIFY_TOKEN on orbit-api).");
-    const plan = await this.db.one<{ features: PlanFeatures }>(`SELECT p.features FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = $1`, [t.businessId]);
-    if (!planAllowsPower(plan!.features, type)) throw badRequest('upgrade_needed', 'This Power is not on your plan. Upgrade to use it.');
+    await this.ready(t, type);
     const parsed = Connect[type].safeParse(raw);
     if (!parsed.success) throw badRequest('invalid_input', parsed.error.issues[0]?.message ?? 'Please check the details.');
     const b: any = parsed.data;
@@ -98,9 +100,20 @@ export class MetaChannelsService implements OnModuleInit {
     } catch (e) {
       throw badRequest('meta_check_failed', `Meta did not accept these details: ${(e as Error).message}`);
     }
+    const settings = type === 'whatsapp' && b.templateName ? { templateName: b.templateName, templateLanguage: b.templateLanguage || 'en' } : {};
+    return this.save(t, type, creds, label, settings);
+  }
+
+  private async ready(t: Tenant, type: MetaChannel) {
+    if (!meta.metaConfig.ready) throw badRequest('power_not_configured', "Orbit's Meta app is not set up on this server yet (META_APP_SECRET and META_VERIFY_TOKEN on orbit-api).");
+    const plan = await this.db.one<{ features: PlanFeatures }>(`SELECT p.features FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = $1`, [t.businessId]);
+    if (!planAllowsPower(plan!.features, type)) throw badRequest('upgrade_needed', 'This Power is not on your plan. Upgrade to use it.');
+  }
+
+  /** Stores the (encrypted) connection and the webhook route; replaces an earlier one of the same kind. */
+  private async save(t: Tenant, type: MetaChannel, creds: Creds, label: string, settings: Record<string, unknown>) {
     const taken = await this.db.one<{ business_id: string }>(`SELECT business_id FROM channel_routes WHERE channel = $1 AND external_id = $2`, [type, creds.accountId]);
     if (taken && taken.business_id !== t.businessId) throw new AppError(409, 'already_connected', 'This account is already connected to another business on Orbit.');
-    const settings = type === 'whatsapp' && b.templateName ? { templateName: b.templateName, templateLanguage: b.templateLanguage || 'en' } : {};
     const id = await this.db.withTenant(t.businessId, async (tx) => {
       const old = await tx.q<{ id: string }>(`UPDATE power_connections SET status = 'disconnected', encrypted_tokens = NULL WHERE power_type = $1 AND status <> 'disconnected' RETURNING id`, [type]);
       if (old.length) await tx.q(`DELETE FROM channel_routes WHERE power_connection_id = ANY($1::uuid[])`, [old.map((o) => o.id)]);
@@ -120,6 +133,99 @@ export class MetaChannelsService implements OnModuleInit {
     }, t.userId);
     await this.audit.write({ businessId: t.businessId, actorId: t.userId, action: 'power.connect', entity: 'power', entityId: id, after: { type, account: label } });
     return { ok: true, id, account: label, webhookUrl: '/webhooks/meta' };
+  }
+
+  // ---------- one-click connect ----------
+
+  /** What the Powers screen needs to open Meta's popups (all public values). */
+  setup() {
+    const c = meta.metaConfig;
+    return { oneClick: c.oneClick, appId: c.appId || null, version: c.version, whatsappConfigId: c.whatsappConfigId || null, loginConfigId: c.loginConfigId || null };
+  }
+
+  /**
+   * WhatsApp Embedded Signup finished in the owner's browser: exchange the code for a
+   * business token, receive this account's webhooks, register the number, connect.
+   */
+  async connectWhatsAppSignup(t: Tenant, raw: unknown) {
+    await this.ready(t, 'whatsapp');
+    if (!meta.metaConfig.oneClick.whatsapp) throw badRequest('power_not_configured', 'One-click WhatsApp is not set up on this server yet (META_APP_ID and META_WA_CONFIG_ID).');
+    const b = z.object({ code: z.string().min(10).max(2000), phoneNumberId: z.string().regex(/^\d{5,30}$/), wabaId: z.string().regex(/^\d{5,30}$/) }).safeParse(raw);
+    if (!b.success) throw badRequest('invalid_input', 'WhatsApp setup did not finish. Please try again.');
+    const { code, phoneNumberId, wabaId } = b.data;
+    let token: string;
+    let label: string;
+    const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    try {
+      token = await meta.exchangeCode(code);
+      await meta.subscribeWaba(wabaId, token);
+      // A number already on Cloud API (or on the WhatsApp Business app) is already registered: not an error.
+      await meta.registerNumber(phoneNumberId, token, pin).catch((e) => logger.warn(`register ${phoneNumberId}: ${(e as Error).message}`, 'Channels'));
+      label = await meta.checkAccount('whatsapp', phoneNumberId, token);
+    } catch (e) {
+      throw badRequest('meta_check_failed', `Meta did not finish connecting WhatsApp: ${(e as Error).message}`);
+    }
+    return this.save(t, 'whatsapp', { token, accountId: phoneNumberId, wabaId, pin }, label, {});
+  }
+
+  /**
+   * Facebook Login for Business finished: list the Pages (and linked Instagram accounts)
+   * the owner granted. Page tokens go back sealed, so the browser can pick but never read them.
+   */
+  async pagesFromLogin(t: Tenant, raw: unknown) {
+    if (!meta.metaConfig.oneClick.pages) throw badRequest('power_not_configured', 'One-click Facebook and Instagram is not set up on this server yet (META_APP_ID and META_LOGIN_CONFIG_ID).');
+    const b = z.object({ code: z.string().min(10).max(2000) }).safeParse(raw);
+    if (!b.success) throw badRequest('invalid_input', 'Facebook sign-in did not finish. Please try again.');
+    let pages: meta.PageChoice[];
+    try {
+      pages = await meta.listPages(await meta.exchangeCode(b.data.code));
+    } catch (e) {
+      throw badRequest('meta_check_failed', `Facebook did not share your Pages: ${(e as Error).message}`);
+    }
+    if (!pages.length) throw badRequest('no_pages', 'No Facebook Page was shared. Please try again and tick your Page (and Instagram account).');
+    const selection = seal({ b: t.businessId, u: t.userId, exp: Date.now() + 15 * 60_000, pages }).toString('base64url');
+    return { selection, pages: pages.map((p) => ({ id: p.id, name: p.name, instagram: p.instagram })) };
+  }
+
+  /** Connect Messenger and/or Instagram for the Page the owner picked. */
+  async connectPage(t: Tenant, raw: unknown) {
+    const b = z.object({ selection: z.string().min(20).max(200_000), pageId: z.string().regex(/^\d{5,30}$/), messenger: z.boolean(), instagram: z.boolean() }).safeParse(raw);
+    if (!b.success || (!b.data.messenger && !b.data.instagram)) throw badRequest('invalid_input', 'Please choose Messenger, Instagram or both.');
+    let sel: { b: string; u: string; exp: number; pages: meta.PageChoice[] } | null = null;
+    try {
+      sel = open(Buffer.from(b.data.selection, 'base64url'));
+    } catch {
+      sel = null;
+    }
+    if (!sel || sel.b !== t.businessId || sel.u !== t.userId || sel.exp < Date.now()) throw badRequest('expired', 'That took too long. Please tap Connect again.');
+    const page = sel.pages.find((p) => p.id === b.data.pageId);
+    if (!page) throw notFound();
+    const done: Record<string, string> = {};
+    if (b.data.messenger) {
+      await this.ready(t, 'messenger');
+      await meta.subscribeApp('messenger', page.id, page.token);
+      done.messenger = (await this.save(t, 'messenger', { token: page.token, accountId: page.id, pageId: page.id }, page.name, {})).account;
+    }
+    if (b.data.instagram) {
+      if (!page.instagram) throw badRequest('no_instagram', 'This Page has no Instagram professional account linked. Link one in Instagram settings, then try again.');
+      await this.ready(t, 'instagram');
+      await meta.subscribeApp('instagram', page.id, page.token);
+      const label = page.instagram.username ? `@${page.instagram.username}` : page.name;
+      done.instagram = (await this.save(t, 'instagram', { token: page.token, accountId: page.instagram.id, pageId: page.id }, label, {})).account;
+    }
+    return { ok: true, connected: done };
+  }
+
+  /** The approved template used outside WhatsApp's 24-hour window (set after a one-click connect). */
+  async whatsappSettings(t: Tenant, raw: unknown) {
+    const b = z.object({ templateName: z.string().trim().max(512), templateLanguage: z.string().trim().max(10).default('en') }).safeParse(raw);
+    if (!b.success) throw badRequest('invalid_input', 'Please check the template name.');
+    const settings = b.data.templateName ? { templateName: b.data.templateName, templateLanguage: b.data.templateLanguage || 'en' } : {};
+    const r = await this.db.withTenant(t.businessId, (tx) =>
+      tx.one(`UPDATE power_connections SET settings = $1 WHERE power_type = 'whatsapp' AND status = 'connected' RETURNING id`, [JSON.stringify(settings)]),
+    t.userId);
+    if (!r) throw notFound();
+    return { ok: true, settings };
   }
 
   // ---------- receiving ----------
@@ -260,6 +366,35 @@ export class MetaChannelsService implements OnModuleInit {
 @Controller('channels')
 export class ChannelsController {
   constructor(private readonly svc: MetaChannelsService) {}
+
+  @Get('meta/setup')
+  setup() {
+    return this.svc.setup();
+  }
+
+  @Roles('owner', 'manager')
+  @Post('whatsapp/signup')
+  whatsappSignup(@CurrentTenant() t: Tenant, @Body() body: unknown) {
+    return this.svc.connectWhatsAppSignup(t, body);
+  }
+
+  @Roles('owner', 'manager')
+  @Post('whatsapp/settings')
+  whatsappSettings(@CurrentTenant() t: Tenant, @Body() body: unknown) {
+    return this.svc.whatsappSettings(t, body);
+  }
+
+  @Roles('owner', 'manager')
+  @Post('pages/login')
+  pagesLogin(@CurrentTenant() t: Tenant, @Body() body: unknown) {
+    return this.svc.pagesFromLogin(t, body);
+  }
+
+  @Roles('owner', 'manager')
+  @Post('pages/connect')
+  pagesConnect(@CurrentTenant() t: Tenant, @Body() body: unknown) {
+    return this.svc.connectPage(t, body);
+  }
 
   @Roles('owner', 'manager')
   @Post(':type/connect')

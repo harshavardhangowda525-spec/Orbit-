@@ -15,8 +15,26 @@ export const metaConfig = {
   get verifyToken() {
     return process.env.META_VERIFY_TOKEN ?? '';
   },
+  get version() {
+    return process.env.META_GRAPH_VERSION || 'v27.0';
+  },
   get graph() {
-    return `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || 'v21.0'}`;
+    return `https://graph.facebook.com/${this.version}`;
+  },
+  get appId() {
+    return process.env.META_APP_ID ?? '';
+  },
+  /** Facebook Login for Business configuration of the "WhatsApp Embedded Signup" kind. */
+  get whatsappConfigId() {
+    return process.env.META_WA_CONFIG_ID ?? '';
+  },
+  /** Facebook Login for Business configuration for Pages + Instagram messaging. */
+  get loginConfigId() {
+    return process.env.META_LOGIN_CONFIG_ID ?? '';
+  },
+  /** One-click connect needs the app id and the configuration ids as well. */
+  get oneClick() {
+    return { whatsapp: !!(this.ready && this.appId && this.whatsappConfigId), pages: !!(this.ready && this.appId && this.loginConfigId) };
   },
   /** Webhooks can be received (and channels connected) only with the app secret and verify token set. */
   get ready() {
@@ -70,6 +88,45 @@ export async function checkAccount(channel: MetaChannel, accountId: string, toke
 export async function subscribeApp(channel: MetaChannel, pageId: string, token: string) {
   if (channel === 'whatsapp') return;
   await graph(`/${encodeURIComponent(pageId)}/subscribed_apps`, token, { body: { subscribed_fields: ['messages'] } });
+}
+
+// ---------- one-click connect (Embedded Signup / Facebook Login for Business) ----------
+
+/** The short-lived code from the Meta popup -> a business token (server to server, within 30 seconds). */
+export async function exchangeCode(code: string): Promise<string> {
+  const q = new URLSearchParams({ client_id: metaConfig.appId, client_secret: metaConfig.appSecret, code });
+  const res = await fetch(`${metaConfig.graph}/oauth/access_token?${q}`, { signal: AbortSignal.timeout(20_000) });
+  const d: any = await res.json().catch(() => ({}));
+  if (!res.ok || !d.access_token) throw new MetaError(res.status || 400, d?.error?.message ?? 'Meta did not accept the sign-in. Please try again.');
+  return d.access_token;
+}
+
+/** Receive this WhatsApp account's messages through Orbit's app. */
+export async function subscribeWaba(wabaId: string, token: string) {
+  await graph(`/${encodeURIComponent(wabaId)}/subscribed_apps`, token, { method: 'POST' });
+}
+
+/** Register the number for Cloud API with a two-step verification PIN. */
+export async function registerNumber(phoneNumberId: string, token: string, pin: string) {
+  await graph(`/${encodeURIComponent(phoneNumberId)}/register`, token, { body: { messaging_product: 'whatsapp', pin } });
+}
+
+export interface PageChoice {
+  id: string;
+  name: string;
+  token: string;
+  instagram: { id: string; username: string | null } | null;
+}
+
+/** Pages the owner granted, each with its Page token and linked Instagram professional account. */
+export async function listPages(userToken: string): Promise<PageChoice[]> {
+  const d = await graph(`/me/accounts?fields=id,name,access_token,instagram_business_account%7Bid,username%7D&limit=100`, userToken);
+  return (d.data ?? []).filter((p: any) => p.id && p.access_token).map((p: any) => ({
+    id: String(p.id),
+    name: p.name ?? String(p.id),
+    token: p.access_token,
+    instagram: p.instagram_business_account?.id ? { id: String(p.instagram_business_account.id), username: p.instagram_business_account.username ?? null } : null,
+  }));
 }
 
 // ---------- sending ----------

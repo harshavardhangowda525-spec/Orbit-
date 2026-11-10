@@ -42,6 +42,9 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
   beforeAll(async () => {
     process.env.META_APP_SECRET = SECRET;
     process.env.META_VERIFY_TOKEN = VERIFY;
+    process.env.META_APP_ID = '424242';
+    process.env.META_WA_CONFIG_ID = 'cfg-wa';
+    process.env.META_LOGIN_CONFIG_ID = 'cfg-pages';
     global.fetch = (async (url: string, init?: any) => {
       const u = String(url);
       if (!u.startsWith('https://graph.facebook.com/')) return realFetch(url as any, init);
@@ -55,6 +58,10 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
         return ok({ display_phone_number: '+91 98450 00000', verified_name: 'Glow' });
       }
       if (/fields=name$/.test(u)) return ok({ name: 'Glow Page' });
+      if (u.includes('/oauth/access_token')) return u.includes('code=bad-code-123') ? new Response(JSON.stringify({ error: { message: 'Invalid verification code' } }), { status: 400 }) : ok({ access_token: 'BIZ-TOKEN', token_type: 'bearer' });
+      if (/\/register$/.test(u)) return ok({ success: true });
+      if (u.includes('/me/accounts')) return ok({ data: [{ id: '3330003', name: 'Wave Salon Page', access_token: 'PAGE-TOKEN', instagram_business_account: { id: '4440004', username: 'wavesalon' } }] });
+      if (u.includes('fields=username')) return ok({ username: 'wavesalon' });
       if (/fields=first_name/.test(u)) return ok({ first_name: 'Ravi', last_name: 'Shetty' });
       return ok({});
     }) as any;
@@ -70,6 +77,9 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
     global.fetch = realFetch;
     delete process.env.META_APP_SECRET;
     delete process.env.META_VERIFY_TOKEN;
+    delete process.env.META_APP_ID;
+    delete process.env.META_WA_CONFIG_ID;
+    delete process.env.META_LOGIN_CONFIG_ID;
     await app.close();
   });
   beforeEach(() => {
@@ -224,5 +234,39 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
     } finally {
       fake.reset();
     }
+  });
+
+  it('one-click WhatsApp: the code from Meta\'s popup becomes a connection with no tokens typed', async () => {
+    const setup = (await b.api.get('/channels/meta/setup').expect(200)).body;
+    expect(setup).toMatchObject({ oneClick: { whatsapp: true, pages: true }, appId: '424242', whatsappConfigId: 'cfg-wa', loginConfigId: 'cfg-pages' });
+    const bad = await b.api.post('/channels/whatsapp/signup', { code: 'bad-code-123', phoneNumberId: '7770007', wabaId: '8880008' });
+    expect(bad.body.error.code).toBe('meta_check_failed');
+    const r = await b.api.post('/channels/whatsapp/signup', { code: 'good-code-123', phoneNumberId: '7770007', wabaId: '8880008' }).expect(201);
+    expect(r.body.account).toBe('Glow · +91 98450 00000');
+    expect(sent.some((x) => x.url.endsWith('/8880008/subscribed_apps'))).toBe(true);
+    const reg = sent.find((x) => x.url.endsWith('/7770007/register'));
+    expect(reg?.body).toMatchObject({ messaging_product: 'whatsapp' });
+    expect(reg?.body.pin).toMatch(/^\d{6}$/);
+    // Messages to that number now reach business B.
+    await hook(waMessage('7770007', '919845099999', 'wamid.oneclick', 'hi')).expect(200);
+    const n = await tenant(b.businessId, (tx) => tx.one(`SELECT count(*)::int AS n FROM conversations WHERE external_thread_id = '919845099999'`));
+    expect(n.n).toBe(1);
+    // The reminder template can be set afterwards.
+    await b.api.post('/channels/whatsapp/settings', { templateName: 'orbit_update', templateLanguage: 'en' }).expect(201);
+  });
+
+  it('one-click Facebook: pick a Page, connect Messenger and Instagram together', async () => {
+    const login = (await b.api.post('/channels/pages/login', { code: 'good-code-456' }).expect(201)).body;
+    expect(login.pages).toEqual([{ id: '3330003', name: 'Wave Salon Page', instagram: { id: '4440004', username: 'wavesalon' } }]);
+    expect(JSON.stringify(login)).not.toContain('PAGE-TOKEN'); // the browser never sees Page tokens
+    // Another business cannot reuse this selection.
+    const stolen = await a.api.post('/channels/pages/connect', { selection: login.selection, pageId: '3330003', messenger: true, instagram: false });
+    expect(stolen.body.error.code).toBe('expired');
+    const r = await b.api.post('/channels/pages/connect', { selection: login.selection, pageId: '3330003', messenger: true, instagram: true }).expect(201);
+    expect(r.body.connected).toEqual({ messenger: 'Wave Salon Page', instagram: '@wavesalon' });
+    const ig = { object: 'instagram', entry: [{ id: '4440004', messaging: [{ sender: { id: 'igsid-1' }, recipient: { id: '4440004' }, timestamp: Date.now(), message: { mid: 'ig_1', text: 'Price for haircut?' } }] }] };
+    await hook(ig).expect(200);
+    const n = await tenant(b.businessId, (tx) => tx.one(`SELECT count(*)::int AS n FROM messages WHERE channel_message_id = 'ig:ig_1'`));
+    expect(n.n).toBe(1);
   });
 });
