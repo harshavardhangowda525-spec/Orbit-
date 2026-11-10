@@ -8,7 +8,7 @@ export default async function globalSetup() {
   await c.connect();
   const tables = (await c.query<{ t: string }>(`SELECT tablename AS t FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user`)).rows;
   if (tables.length) await c.query(`DROP TABLE ${tables.map((r) => `"${r.t}"`).join(', ')} CASCADE`);
-  await c.query(`DROP FUNCTION IF EXISTS set_updated_at() CASCADE; DROP FUNCTION IF EXISTS app_current_business() CASCADE;`);
+  await c.query(`DROP FUNCTION IF EXISTS set_updated_at() CASCADE; DROP FUNCTION IF EXISTS app_current_business() CASCADE; DROP FUNCTION IF EXISTS invoices_locked() CASCADE;`);
   await c.end();
   const { migrate } = require('../src/scripts/migrate');
   await migrate(url, true);

@@ -1,0 +1,33 @@
+/* Customer invoice: plain, printable, A4-friendly. */
+.inv-page { min-height: 100dvh; background: #f4f3fb; padding: 16px; color: #1c1a3a; }
+.inv-sheet { max-width: 820px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 8px 30px rgba(28, 26, 58, 0.08); }
+.inv-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 2px solid #ebe9f7; padding-bottom: 16px; font-size: 14px; line-height: 1.5; }
+.inv-head h1 { margin: 0 0 4px; font-size: 20px; }
+.inv-title { text-align: right; }
+.inv-title h2 { margin: 0; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase; color: #5b4ce0; }
+.stamp { display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; }
+.stamp.paid { background: #dff7ec; color: #136b47; }
+.stamp.cancelled { background: #fde7e1; color: #9a3412; }
+.inv-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 16px 0; font-size: 14px; }
+.inv-meta > div { display: flex; flex-direction: column; gap: 2px; }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.inv-table th { text-align: left; font-size: 12px; color: #6b6890; border-bottom: 1px solid #ebe9f7; padding: 8px 6px; }
+.inv-table td { padding: 10px 6px; border-bottom: 1px solid #f1f0f8; vertical-align: top; }
+.inv-table .num, .inv-table th.num { text-align: right; white-space: nowrap; }
+.inv-totals { margin: 12px 0 0 auto; max-width: 320px; display: grid; gap: 6px; font-size: 14px; }
+.inv-totals > div { display: flex; justify-content: space-between; }
+.inv-totals .grand { border-top: 2px solid #1c1a3a; padding-top: 8px; font-size: 18px; font-weight: 800; }
+.inv-notes { font-size: 13px; color: #6b6890; margin-top: 16px; white-space: pre-line; }
+.inv-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.inv-actions .btn { min-height: 48px; }
+.inv-powered { text-align: center; margin-top: 12px; }
+@media (max-width: 560px) {
+  .inv-sheet { padding: 16px; }
+  .inv-title { text-align: left; }
+  .inv-table th:nth-child(3), .inv-table td:nth-child(3) { display: none; }
+}
+@media print {
+  .inv-page { background: #fff; padding: 0; }
+  .inv-sheet { box-shadow: none; border-radius: 0; max-width: none; }
+  .inv-actions, .inv-powered { display: none; }
+}

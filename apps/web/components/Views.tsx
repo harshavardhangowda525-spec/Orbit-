@@ -95,7 +95,7 @@ const GROUPS = ['calendar', 'messaging', 'payments', 'records', 'presence'];
 /** Powers: what each service lets Orbit do, and one tap to connect or disconnect. */
 export function PowersView() {
   const { t } = useI18n();
-  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | 'razorpay' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
   const [form, setForm] = useState<string | null>(null);
   const { data: metaSetup } = useLoad<MetaSetup>('/channels/meta/setup');
   const [pagePick, setPagePick] = useState<{ selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' } | null>(null);
@@ -166,7 +166,7 @@ export function PowersView() {
                   <button className="btn small" disabled={busy === p.type} onClick={() => disconnect(p.connection!.id, p.type)}>{t('powers.disconnect')}</button>
                 ) : p.available ? (
                   p.onPlan ? (
-                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : p.form === 'sms' ? setForm(form === 'sms' ? null : 'sms') : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
+                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : p.form === 'sms' || p.form === 'razorpay' ? setForm(form === p.type ? null : p.type) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
                   ) : (
                     <span className="chip">{t('powers.upgrade')}</span>
                   )
@@ -182,6 +182,7 @@ export function PowersView() {
                 )}
                 {form === p.type && p.form === 'meta' && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {form === 'sms' && p.type === 'sms' && <SmsConnectForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
+                {form === 'razorpay' && p.type === 'razorpay' && <RazorpayForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {pagePick && (pagePick.want === p.type) && (
                   <PagePicker pick={pagePick} allowMessenger={onPlan('messenger')} allowInstagram={onPlan('instagram')} onDone={() => { setPagePick(null); reload(); }} onCancel={() => setPagePick(null)} />
                 )}
@@ -447,6 +448,56 @@ function SmsConnectForm({ onDone, onCancel }: { onDone: () => void; onCancel: ()
         </label>
       ))}
       <p className="small muted">{t('sms.one_way')}</p>
+      {err && <p className="error">{err}</p>}
+      <div className="row">
+        <button className="btn primary" disabled={busy}>{busy ? t('common.wait') : t('powers.connect')}</button>
+        <button type="button" className="btn" onClick={onCancel}>{t('meta.cancel')}</button>
+      </div>
+    </form>
+  );
+}
+
+/** Razorpay: the business's own keys; then (optional) the webhook to paste into Razorpay. */
+function RazorpayForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const [keyId, setKeyId] = useState('');
+  const [keySecret, setKeySecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [hook, setHook] = useState<{ webhookUrl: string; webhookSecret: string } | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      setHook(await api('/ledger/razorpay/connect', { body: { keyId: keyId.trim(), keySecret: keySecret.trim() } }));
+    } catch (x) {
+      setErr((x as ApiError).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (hook) {
+    return (
+      <div className="meta-form stack" data-testid="razorpay-webhook">
+        <p className="note small">{t('rzp.connected')}</p>
+        <p className="small">{t('rzp.webhook_intro')}</p>
+        <label className="field"><span>{t('rzp.webhook_url')}</span><input className="input" readOnly value={hook.webhookUrl} onFocus={(e) => e.target.select()} /></label>
+        <label className="field"><span>{t('rzp.webhook_secret')}</span><input className="input" readOnly value={hook.webhookSecret} onFocus={(e) => e.target.select()} /></label>
+        <p className="small muted">{t('rzp.webhook_steps')}</p>
+        <div className="row"><button className="btn primary" onClick={onDone}>{t('rzp.done')}</button></div>
+      </div>
+    );
+  }
+  return (
+    <form className="meta-form stack" onSubmit={submit} data-testid="connect-razorpay">
+      <details className="meta-help">
+        <summary>{t('meta.help.title')}</summary>
+        <ol>{t('rzp.help').split('\n').map((line, i) => <li key={i}>{line}</li>)}</ol>
+      </details>
+      <label className="field"><span>Key ID</span><input className="input" autoComplete="off" spellCheck={false} placeholder="rzp_live_..." value={keyId} onChange={(e) => setKeyId(e.target.value)} required /></label>
+      <label className="field"><span>Key Secret</span><input className="input" type="password" autoComplete="off" value={keySecret} onChange={(e) => setKeySecret(e.target.value)} required /></label>
+      <p className="small muted">{t('meta.secure')}</p>
       {err && <p className="error">{err}</p>}
       <div className="row">
         <button className="btn primary" disabled={busy}>{busy ? t('common.wait') : t('powers.connect')}</button>

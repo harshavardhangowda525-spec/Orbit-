@@ -248,3 +248,31 @@ textarea.input { min-height: 220px; font-family: ui-monospace, Menlo, monospace;
 .link-btn.advanced { flex-basis: 100%; text-align: left; padding: 4px 0 0; min-height: 32px; }
 .check-line { display: flex; align-items: center; gap: 10px; min-height: 40px; }
 .check-line input { width: 18px; height: 18px; accent-color: #7a68ff; }
+
+/* Money (Ledger) */
+.money-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 720px) { .money-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.money-tiles .tile { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 16px; }
+.money-tiles .tile b { font-size: 1.25rem; font-weight: 800; }
+.money-tiles .tile span { font-size: 0.85rem; color: var(--muted); }
+.money .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.money .seg button[aria-current='true'] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.money .rowbtn { width: 100%; text-align: left; background: none; border: none; color: inherit; cursor: pointer; display: flex; gap: 10px; align-items: center; }
+.money .rowbtn .right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.status-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--soft); }
+.status-chip.s-paid { background: var(--success-bg); color: var(--success-ink); }
+.status-chip.s-overdue { background: var(--attn-bg); color: var(--attn-ink); }
+.status-chip.s-cancelled { opacity: 0.6; text-decoration: line-through; }
+.invoice-detail { padding: 8px 0 14px; border-bottom: 1px solid var(--border); }
+.inv-lines { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.inv-lines td { padding: 4px 0; }
+.inv-lines .num { text-align: right; white-space: nowrap; }
+.inv-lines .sub td { color: var(--muted); font-size: 0.85rem; }
+.inv-lines .total td { font-weight: 800; border-top: 1px solid var(--border); padding-top: 6px; }
+.row.wrap { flex-wrap: wrap; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.invoice-form .field, .money .field { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 0.9rem; }
+.line-row { display: grid; grid-template-columns: 1fr 64px 96px 80px; gap: 6px; }
+.line-row:not(:has(select)) { grid-template-columns: 1fr 64px 110px; }
+.inv-preview { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--soft); }
+@media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } .line-row { grid-template-columns: 1fr 52px 84px 68px; } }

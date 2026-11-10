@@ -8,7 +8,7 @@ import { useCycle } from '@/lib/motion';
 
 const SPEECH_LANG: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', kn: 'kn-IN' };
 
-export type OrbitScreen = 'today' | 'crew' | 'people' | 'powers' | 'details' | 'inbox' | 'conversation';
+export type OrbitScreen = 'today' | 'crew' | 'people' | 'money' | 'powers' | 'details' | 'inbox' | 'conversation';
 type Turn = { role: 'owner' | 'orbit'; text: string };
 
 /**

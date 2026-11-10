@@ -11,6 +11,7 @@ import { useLive, ownerLiveQuery } from '@/lib/live';
 import { useIntroOnce, usePageVisible } from '@/lib/motion';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
+import { MoneyView } from '@/components/MoneyView';
 import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
 import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
 import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
@@ -83,6 +84,7 @@ function Bridge() {
     else if (it.entityType === 'lead' || it.entityType === 'customer') setView('people');
     else if (it.entityType === 'task') setView('crew');
     else if (it.entityType === 'power') setView('powers');
+    else if (it.entityType === 'invoice') setView('money');
   };
 
   const onTouchStart = (e: React.TouchEvent) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY });
@@ -150,6 +152,7 @@ function Bridge() {
       {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} />}
       {/* These load business data, so they wait until The Bridge (and the chosen business) is ready. */}
       {data && view === 'people' && <PeopleView />}
+      {data && view === 'money' && <MoneyView />}
       {data && view === 'powers' && <PowersView />}
       {data && view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}

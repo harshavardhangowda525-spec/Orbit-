@@ -8,3 +8,4 @@ export * from './slug';
 export * from './time';
 export * from './i18n';
 export * from './availability';
+export * from './gst';
