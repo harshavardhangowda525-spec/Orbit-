@@ -95,7 +95,7 @@ const GROUPS = ['calendar', 'messaging', 'payments', 'records', 'presence'];
 /** Powers: what each service lets Orbit do, and one tap to connect or disconnect. */
 export function PowersView() {
   const { t } = useI18n();
-  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | 'razorpay' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
   const [form, setForm] = useState<string | null>(null);
   const { data: metaSetup } = useLoad<MetaSetup>('/channels/meta/setup');
   const [pagePick, setPagePick] = useState<{ selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' } | null>(null);
@@ -127,7 +127,7 @@ export function PowersView() {
     setBusy(type);
     setMsg(null);
     try {
-      const r = await api<{ url: string }>(type === 'outlook' ? '/channels/outlook/connect' : `/powers/${type}/connect`, { body: {} });
+      const r = await api<{ url: string }>(type === 'outlook' ? '/channels/outlook/connect' : type === 'zoho_books' ? '/ledger/zoho/connect' : `/powers/${type}/connect`, { body: {} });
       window.location.href = r.url;
     } catch (e) {
       setMsg((e as ApiError).message);

@@ -212,6 +212,16 @@ One Microsoft app for all businesses; each owner then clicks **Powers → Outloo
 4. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated**: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`.
 5. Render → orbit-api → Environment: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` (the redirect URI from step 1).
 
+## Zoho Books (accounting sync)
+One Zoho app for all businesses; each owner clicks **Powers → Zoho Books → Connect**.
+1. Go to **api-console.zoho.in** → **Add Client** → **Server-based Applications**.
+   - **Client name:** `Orbit` · **Homepage URL:** your orbit-web address
+   - **Authorized redirect URI:** `https://<your orbit-api address>/powers/oauth/zoho/callback`
+2. Copy the **Client ID** and **Client Secret**. Under **Settings**, turn on **Multi-DC** so owners on other Zoho data centres can connect too.
+3. Render → orbit-api → Environment: `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REDIRECT_URI` (the URI from step 1).
+
+Each issued invoice is copied to Zoho with the same number and GST (Zoho's CGST+SGST group or IGST tax for the rate), each payment is recorded against it, and cancelled invoices are voided there.
+
 ## SMS (India, DLT)
 Each business connects its own MSG91 account from **Powers → SMS** (the form explains DLT registration). Nothing to set on the server. SMS is one-way (reminders and updates); replies come in on WhatsApp.
 

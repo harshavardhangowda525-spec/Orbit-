@@ -20,8 +20,9 @@ import { open, seal } from './crypto';
 import * as google from './google';
 import { metaConfig } from '../channels/meta';
 import { msConfig } from '../channels/microsoft';
+import { zohoConfig } from '../ledger/zoho';
 
-export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' | 'microsoft' | 'sms' | 'razorpay' }[] = [
+export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' }[] = [
   { type: 'google_calendar', group: 'calendar', oauth: 'google' },
   { type: 'gmail', group: 'messaging', oauth: 'google' },
   { type: 'whatsapp', group: 'messaging', oauth: null, form: 'meta' },
@@ -33,6 +34,7 @@ export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | n
   { type: 'outlook_calendar', group: 'calendar', oauth: null },
   { type: 'razorpay', group: 'payments', oauth: null, form: 'razorpay' },
   { type: 'google_sheets', group: 'records', oauth: null },
+  { type: 'zoho_books', group: 'records', oauth: null, form: 'zoho' },
   { type: 'google_business_profile', group: 'presence', oauth: null },
 ];
 
@@ -110,7 +112,7 @@ export class PowersService implements OnModuleInit {
       return {
         type: p.type,
         group: p.group,
-        available: p.form === 'meta' ? metaConfig.ready : p.form === 'microsoft' ? msConfig.ready : p.form === 'sms' || p.form === 'razorpay' ? true : p.oauth !== null && google.googleConfigured(),
+        available: p.form === 'meta' ? metaConfig.ready : p.form === 'microsoft' ? msConfig.ready : p.form === 'zoho' ? zohoConfig.ready : p.form === 'sms' || p.form === 'razorpay' ? true : p.oauth !== null && google.googleConfigured(),
         form: p.form ?? null,
         onPlan: planAllowsPower(plan!.features, p.type),
         connection: c ? { id: c.id, status: c.status, account: c.account_label, error: c.error, scopes: c.scopes, lastSyncAt: c.last_sync_at, settings: c.settings ?? {} } : null,

@@ -27,7 +27,7 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ start: string; end: string; service: string; staff: string | null; manageUrl: string } | null>(null);
+  const [done, setDone] = useState<{ start: string; end: string; service: string; staff: string | null; manageUrl: string; status?: string; deposit?: { url: string; amount: number; payBy: string } | null } | null>(null);
   const locale = lang === 'en' ? 'en-IN' : `${lang}-IN`;
   const dayKey = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(iso));
   const dayLabel = (iso: string) => new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone }).format(new Date(iso));
@@ -96,7 +96,15 @@ export function BookingFlow({ slug, services, currency, timezone, lang, business
       </div>
       {done ? (
         <>
-          <p>{t('book.done', { service: done.service, when: `${dayLabel(done.start)}, ${timeLabel(done.start)}` })}</p>
+          {done.deposit ? (
+            <>
+              <p>{t('book.held', { service: done.service, when: `${dayLabel(done.start)}, ${timeLabel(done.start)}` })}</p>
+              <a className="btn primary block" href={done.deposit.url} data-testid="pay-deposit">{t('book.pay_deposit', { amount: formatMoney(lang, currency, done.deposit.amount) })}</a>
+              <p className="small muted">{t('book.pay_by', { time: `${dayLabel(done.deposit.payBy)}, ${timeLabel(done.deposit.payBy)}` })}</p>
+            </>
+          ) : (
+            <p>{t('book.done', { service: done.service, when: `${dayLabel(done.start)}, ${timeLabel(done.start)}` })}</p>
+          )}
           <a className="btn block" href={ics(done)} download="booking.ics">📅 {t('book.add_calendar')}</a>
           <a className="btn block" href={done.manageUrl}>{t('book.manage')}</a>
         </>

@@ -60,6 +60,11 @@ const money = (lang: string, cur: string, n: number) => formatMoney(lang, cur, N
  */
 @Injectable()
 export class LedgerService implements OnModuleInit {
+  /** Accounting sync (Zoho Books) listens here; runs after the transaction commits. */
+  afterIssue?: (tx: Tx, invoiceId: string) => void;
+  afterPayment?: (tx: Tx, invoiceId: string, paymentId: string) => void;
+  afterCancel?: (tx: Tx, invoiceId: string) => void;
+
   constructor(
     private readonly db: DbService,
     private readonly jobs: JobsService,
@@ -71,6 +76,68 @@ export class LedgerService implements OnModuleInit {
   onModuleInit() {
     this.jobs.register('ledger.reminders', () => this.remindAll());
     this.jobs.register('ledger.sync_links', () => this.syncAll());
+    this.jobs.register('ledger.deposit_expiry', () => this.expireDepositsAll());
+    this.bookings.setDepositProvider((tx, booking, service, customer) => this.depositFor(tx, booking, service, customer));
+  }
+
+  // ---------- deposits ----------
+
+  /**
+   * A booking for a service that needs a deposit: an issued deposit invoice with a
+   * Razorpay link. Without Razorpay there is nothing to collect, so the booking
+   * is simply confirmed.
+   */
+  private async depositFor(tx: Tx, booking: any, svc: any, customer: any) {
+    const keys = await this.razorpay(tx);
+    if (!keys) return null;
+    const amount = Number(svc.deposit_amount ?? Math.max(1, Math.round(Number(svc.price) * 0.25)));
+    const start = new Date(booking.start_at).getTime();
+    const now = Date.now();
+    // Pay within 2 hours, and at least 30 minutes before the appointment (never less than 15 minutes from now).
+    const payBy = new Date(Math.max(now + 15 * 60_000, Math.min(now + 2 * 60 * 60_000, start - 30 * 60_000)));
+    const s = await this.seller(tx);
+    const when = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: s.timezone }).format(new Date(start));
+    const tot = this.totals(s, [{ description: `Deposit: ${svc.name} (${when})`, qty: 1, unitPrice: amount, taxRate: s.default_tax_rate ?? 18 }]);
+    const draft = await tx.one(
+      `INSERT INTO invoices (kind, customer_id, booking_id, line_items, tax, subtotal, tax_total, total, status, due_at, currency, customer_snapshot)
+       VALUES ('deposit', $1, $2, $3, $4, $5, $6, $7, 'draft', $8, $9, '{}') RETURNING id`,
+      [customer.id, booking.id, JSON.stringify(tot.lines), JSON.stringify(taxJson(tot)), tot.subtotal, tot.taxTotal, tot.total, payBy, s.currency],
+    );
+    const inv = await this.issue(tx, draft.id);
+    const token = `${tx.businessId}.${randomBytes(18).toString('base64url')}`;
+    const page = `${config.publicBaseUrl}/i/${token}`;
+    const link = await rzp.createLink(keys.keys, {
+      amount: Number(inv.total), currency: inv.currency, reference: inv.number, invoiceId: inv.id, description: `${s.name} · deposit for ${svc.name}`,
+      customer: { name: customer.name, contact: customer.phone, email: customer.email }, callbackUrl: page,
+    });
+    await tx.q(`UPDATE invoices SET pay_link_id = $2, pay_link_url = $3, public_token_hash = $4, sent_at = now(), due_at = $5 WHERE id = $1`, [inv.id, link.id, link.url, hashToken(token), payBy]);
+    return { url: link.url, amount: Number(inv.total), payBy };
+  }
+
+  /** Unpaid deposits past their time: check Razorpay once more, then free the slot. */
+  async expireDepositsAll() {
+    const ids = await this.db.adminTx((tx) => tx.q<{ business_id: string }>(`SELECT DISTINCT business_id FROM invoices WHERE kind = 'deposit' AND status IN ('sent', 'overdue') AND due_at < now()`));
+    let n = 0;
+    for (const { business_id } of ids) n += await this.expireDeposits(business_id).catch((e) => (logger.error(`deposit expiry failed: ${e.message}`, e.stack, 'Ledger'), 0));
+    return n;
+  }
+
+  async expireDeposits(businessId: string) {
+    return this.db.withTenant(businessId, async (tx) => {
+      let n = 0;
+      for (const inv of await tx.q(`SELECT id, booking_id FROM invoices WHERE kind = 'deposit' AND status IN ('sent', 'overdue') AND due_at < now()`)) {
+        await this.syncInvoice(tx, inv.id).catch(() => undefined);
+        if ((await tx.one(`SELECT status FROM invoices WHERE id = $1`, [inv.id])).status === 'paid') continue;
+        await tx.q(`UPDATE invoices SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, [inv.id]);
+        const keys = await this.razorpay(tx);
+        const link = await tx.one(`SELECT pay_link_id FROM invoices WHERE id = $1`, [inv.id]);
+        if (keys && link?.pay_link_id) await rzp.cancelLink(keys.keys, link.pay_link_id).catch(() => undefined);
+        const bk = inv.booking_id ? await tx.one(`SELECT status FROM bookings WHERE id = $1`, [inv.booking_id]) : null;
+        if (bk?.status === 'pending') await this.bookings.cancel(tx, inv.booking_id, 'deposit_not_paid', 'owner');
+        n++;
+      }
+      return n;
+    });
   }
 
   // ---------- profile ----------
@@ -189,7 +256,10 @@ export class LedgerService implements OnModuleInit {
         JSON.stringify({ name: s.name, legalName: s.legal_name, gstin: s.gstin, state: s.gst_state, address: [s.address, s.city, s.postal_code].filter((x, i, all) => x && !all.slice(0, i).some((y) => y && String(y).toLowerCase().includes(String(x).toLowerCase()))).join(', ') || null, phone: s.phone, email: s.email, notes: s.invoice_notes }),
         JSON.stringify({ ...inv.customer_snapshot, name: c?.name ?? inv.customer_snapshot?.name ?? null, phone: c?.phone ?? null, email: c?.email ?? null }),
       ],
-    );
+    ).then((row) => {
+      this.afterIssue?.(tx, id);
+      return row;
+    });
   }
 
   /** Issue (if needed), add a payment link, and send it to the customer on their best channel. */
@@ -241,8 +311,13 @@ export class LedgerService implements OnModuleInit {
     if (!inv || inv.status === 'paid' || inv.status === 'cancelled') return false;
     if (p.ref && (await tx.one(`SELECT 1 FROM payments WHERE provider = $1 AND provider_ref = $2`, [p.provider, p.ref]))) return false;
     const amount = p.amount ?? Number(inv.total);
-    await tx.q(`INSERT INTO payments (invoice_id, provider, provider_ref, amount, method, status, paid_at) VALUES ($1, $2, $3, $4, $5, 'paid', now())`, [inv.id, p.provider, p.ref, amount, p.method]);
+    const pay = await tx.one(`INSERT INTO payments (invoice_id, provider, provider_ref, amount, method, status, paid_at) VALUES ($1, $2, $3, $4, $5, 'paid', now()) RETURNING id`, [inv.id, p.provider, p.ref, amount, p.method]);
     await tx.q(`UPDATE invoices SET status = 'paid', amount_paid = $2, paid_at = now() WHERE id = $1`, [inv.id, amount]);
+    if (inv.kind === 'deposit' && inv.booking_id) {
+      const bk = await tx.one(`UPDATE bookings SET status = 'confirmed', deposit_payment_id = $2 WHERE id = $1 AND status = 'pending' RETURNING id`, [inv.booking_id, pay.id]);
+      if (bk) liveToBusiness(tx, { type: 'booking.changed', data: { id: bk.id } });
+    }
+    this.afterPayment?.(tx, inv.id, pay.id);
     const who = (inv.customer_snapshot?.name ?? '').split(' ')[0] || '—';
     await postFeed(tx, 'ledger', 'payment_received', { key: 'feed.ledger.paid', params: { amount: `~m:${inv.currency}:${amount}`, customer: who, number: inv.number ?? '' } }, { entityType: 'invoice', entityId: inv.id, valueAmount: amount });
     liveToBusiness(tx, { type: 'invoice.updated', data: { id: inv.id } });
@@ -256,6 +331,7 @@ export class LedgerService implements OnModuleInit {
       if (inv.status === 'paid') throw badRequest('invoice_final', 'A paid invoice cannot be cancelled. Record a refund instead.');
       if (inv.status === 'cancelled') return this.detail(tx, id);
       await tx.q(`UPDATE invoices SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, [id]);
+      if (inv.status !== 'draft') this.afterCancel?.(tx, id);
       const keys = inv.pay_link_id ? await this.razorpay(tx) : null;
       if (keys) await rzp.cancelLink(keys.keys, inv.pay_link_id).catch((e) => logger.warn(`cancel link ${inv.pay_link_id}: ${(e as Error).message}`, 'Ledger'));
       await this.audit.write({ businessId: t.businessId, actorId: t.userId, action: 'invoice.cancel', entity: 'invoice', entityId: id, before: { number: inv.number, total: inv.total } }, tx);
@@ -278,6 +354,24 @@ export class LedgerService implements OnModuleInit {
     if (!keys) return;
     const l = await rzp.getLink(keys.keys, inv.pay_link_id);
     if (l.status === 'paid') await this.recordPayment(tx, inv.id, { provider: 'razorpay', ref: l.paymentId ?? inv.pay_link_id, method: l.method, amount: l.amountPaid || undefined });
+  }
+
+  // ---------- deposit settings ----------
+
+  async depositServices(t: Tenant) {
+    return this.db.withTenant(t.businessId, (tx) =>
+      tx.q(`SELECT id, name, price::float AS price, deposit_required AS "depositRequired", deposit_amount::float AS "depositAmount" FROM services WHERE active AND deleted_at IS NULL AND duration_min > 0 ORDER BY sort_order`),
+    );
+  }
+
+  async setDeposit(t: Tenant, id: string, raw: unknown) {
+    const b = z.object({ required: z.boolean(), amount: z.coerce.number().positive().max(10_000_000).nullable().optional() }).safeParse(raw);
+    if (!b.success) throw badRequest('invalid_input', 'Please check the deposit amount.');
+    const r = await this.db.withTenant(t.businessId, (tx) =>
+      tx.one(`UPDATE services SET deposit_required = $2, deposit_amount = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING id, name, price::float AS price, deposit_required AS "depositRequired", deposit_amount::float AS "depositAmount"`, [id, b.data.required, b.data.amount ?? null]),
+    t.userId);
+    if (!r) throw notFound();
+    return r;
   }
 
   // ---------- reading ----------
@@ -396,7 +490,7 @@ export class LedgerService implements OnModuleInit {
   // ---------- reminders ----------
 
   async remindAll(now = new Date()) {
-    const ids = await this.db.adminTx((tx) => tx.q<{ business_id: string }>(`SELECT DISTINCT business_id FROM invoices WHERE status IN ('sent', 'overdue') AND due_at < now() AND reminders_sent < $1`, [REMINDER_DAYS.length]));
+    const ids = await this.db.adminTx((tx) => tx.q<{ business_id: string }>(`SELECT DISTINCT business_id FROM invoices WHERE kind = 'invoice' AND status IN ('sent', 'overdue') AND due_at < now() AND reminders_sent < $1`, [REMINDER_DAYS.length]));
     let sent = 0;
     for (const { business_id } of ids) sent += await this.remind(business_id, now).catch((e) => (logger.error(`ledger reminders failed: ${e.message}`, e.stack, 'Ledger'), 0));
     return sent;
@@ -406,10 +500,10 @@ export class LedgerService implements OnModuleInit {
   async remind(businessId: string, now = new Date()) {
     return this.db.withTenant(businessId, async (tx) => {
       const tz = (await tx.one(`SELECT timezone FROM businesses WHERE id = app_current_business()`)).timezone;
-      await tx.q(`UPDATE invoices SET status = 'overdue' WHERE status = 'sent' AND due_at < $1`, [now]);
+      await tx.q(`UPDATE invoices SET status = 'overdue' WHERE kind = 'invoice' AND status = 'sent' AND due_at < $1`, [now]);
       const hour = localParts(now, tz).hour;
       if (hour < 10 || hour >= 19) return 0;
-      const due = await tx.q(`SELECT * FROM invoices WHERE status = 'overdue' AND reminders_sent < $1 AND customer_id IS NOT NULL`, [REMINDER_DAYS.length]);
+      const due = await tx.q(`SELECT * FROM invoices WHERE kind = 'invoice' AND status = 'overdue' AND reminders_sent < $1 AND customer_id IS NOT NULL`, [REMINDER_DAYS.length]);
       let sent = 0;
       for (const inv of due) {
         if (now.getTime() < new Date(inv.due_at).getTime() + REMINDER_DAYS[inv.reminders_sent] * DAY) continue;
@@ -521,6 +615,17 @@ export class LedgerController {
   @Post('invoices/:id/refresh')
   refresh(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string) {
     return this.ledger.refresh(t, id);
+  }
+
+  @Get('services')
+  services(@CurrentTenant() t: Tenant) {
+    return this.ledger.depositServices(t);
+  }
+
+  @Roles('owner', 'manager')
+  @Patch('services/:id/deposit')
+  deposit(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.ledger.setDeposit(t, id, body);
   }
 
   @Roles('owner', 'manager')

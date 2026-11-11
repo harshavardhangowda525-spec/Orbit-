@@ -122,7 +122,7 @@ export class PublicBookingController {
     const id = await this.businessId(slug);
     return this.db.withTenant(id, async (tx) => {
       const r = await this.bookings.create(tx, { serviceId: b.serviceId, staffId: b.staffId, start: new Date(b.start), customer: { name: b.name, phone: b.phone, email: b.email }, source: 'booking_page', note: b.note });
-      return { id: r.booking.id, start: r.booking.start_at, end: r.booking.end_at, service: r.service.name, staff: r.staffName, manageUrl: r.manageUrl };
+      return { id: r.booking.id, start: r.booking.start_at, end: r.booking.end_at, service: r.service.name, staff: r.staffName, manageUrl: r.manageUrl, status: r.booking.status, deposit: r.deposit };
     });
   }
 

@@ -132,6 +132,14 @@ export const TOOLS = {
           source: `aria:${ctx.channel}`, conversationId: ctx.conversationId,
         }, ctx.now);
         ctx.effects.customerId = r.customer.id;
+        if (r.deposit) {
+          ctx.effects.quotedAmounts.push(r.deposit.amount);
+          return {
+            ok: true, booking_id: r.booking.id, service: r.service.name, when: await localLabel(ctx, new Date(r.booking.start_at)), with: r.staffName, manage_link: r.manageUrl,
+            status: 'held_until_deposit_paid', deposit_amount: r.deposit.amount, deposit_payment_link: r.deposit.url, pay_by: await localLabel(ctx, r.deposit.payBy),
+            note: 'Tell the customer the slot is held and is confirmed once the deposit is paid by the pay_by time, and share the payment link.',
+          };
+        }
         return { ok: true, booking_id: r.booking.id, service: r.service.name, when: await localLabel(ctx, new Date(r.booking.start_at)), with: r.staffName, manage_link: r.manageUrl };
       } catch (e) {
         if (e instanceof AppError) return { ok: false, error: (e.getResponse() as any).error.message };

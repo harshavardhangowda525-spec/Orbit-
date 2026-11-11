@@ -66,6 +66,13 @@ services:
         sync: false
       - key: MICROSOFT_REDIRECT_URI
         sync: false
+      # Zoho Books: Orbit's Zoho app (docs/DEPLOY.md).
+      - key: ZOHO_CLIENT_ID
+        sync: false
+      - key: ZOHO_CLIENT_SECRET
+        sync: false
+      - key: ZOHO_REDIRECT_URI
+        sync: false
       # One-click connect (Embedded Signup / Facebook Login for Business configurations).
       - key: META_APP_ID
         sync: false

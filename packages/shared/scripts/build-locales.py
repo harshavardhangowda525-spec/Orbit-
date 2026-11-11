@@ -303,6 +303,7 @@ P = {
  'tally':('Tally','Send your sales to Tally.','अपनी बिक्री Tally में भेजें।','ನಿಮ್ಮ ಮಾರಾಟವನ್ನು Tally ಗೆ ಕಳುಹಿಸಿ.'),
  'zoho_books':('Zoho Books','Keep your accounts in step.','अपना हिसाब मिलाकर रखें।','ನಿಮ್ಮ ಲೆಕ್ಕವನ್ನು ಹೊಂದಿಸಿ ಇಡಿ.'),
  'quickbooks':('QuickBooks','Keep your accounts in step.','अपना हिसाब मिलाकर रखें।','ನಿಮ್ಮ ಲೆಕ್ಕವನ್ನು ಹೊಂದಿಸಿ ಇಡಿ.'),
+ 'zoho_books':('Zoho Books','Every invoice and payment copied into your books.','हर इनवॉइस और भुगतान आपकी बुक्स में अपने आप।','ಪ್ರತಿ ಇನ್‌ವಾಯ್ಸ್ ಮತ್ತು ಪಾವತಿ ನಿಮ್ಮ ಬುಕ್ಸ್‌ಗೆ ತಾನಾಗಿ.'),
  'google_sheets':('Google Sheets','Keep customers, bookings and sales in a sheet.','ग्राहक, बुकिंग और बिक्री शीट में रखें।','ಗ್ರಾಹಕರು, ಬುಕಿಂಗ್ ಮತ್ತು ಮಾರಾಟವನ್ನು ಶೀಟ್‌ನಲ್ಲಿ ಇಡಿ.'),
  'google_drive':('Google Drive','Save invoices and price lists.','बिल और रेट लिस्ट सेव करें।','ಬಿಲ್ ಮತ್ತು ದರ ಪಟ್ಟಿ ಉಳಿಸಿ.'),
  'google_business_profile':('Google Business Profile','Update hours, post offers and reply to reviews.','समय अपडेट करें, ऑफ़र पोस्ट करें और रिव्यू का जवाब दें।','ಸಮಯ ನವೀಕರಿಸಿ, ಆಫರ್ ಪೋಸ್ಟ್ ಮಾಡಿ, ವಿಮರ್ಶೆಗಳಿಗೆ ಉತ್ತರಿಸಿ.'),
@@ -574,6 +575,13 @@ k('rzp.webhook_url','Webhook URL','वेबहुक URL','ವೆಬ್\u200c�
 k('rzp.webhook_secret','Secret','सीक्रेट','ಸೀಕ್ರೆಟ್')
 k('rzp.webhook_steps','Razorpay → Account & Settings → Webhooks → Add New Webhook: paste the URL and secret, tick payment_link.paid, and save. The secret is shown only now.','Razorpay → Account & Settings → Webhooks → Add New Webhook: URL और सीक्रेट चिपकाएँ, payment_link.paid चुनें और सेव करें। सीक्रेट सिर्फ़ अभी दिखेगा।','Razorpay → Account & Settings → Webhooks → Add New Webhook: URL ಮತ್ತು ಸೀಕ್ರೆಟ್ ಅಂಟಿಸಿ, payment_link.paid ಆಯ್ಕೆಮಾಡಿ ಮತ್ತು ಉಳಿಸಿ. ಸೀಕ್ರೆಟ್ ಈಗ ಮಾತ್ರ ಕಾಣುತ್ತದೆ.')
 k('rzp.done','Done','हो गया','ಮುಗಿದಿದೆ')
+k('money.deposits','Deposits: pay to confirm a booking','जमा राशि: बुकिंग पक्की करने के लिए भुगतान','ಠೇವಣಿ: ಬುಕಿಂಗ್ ದೃಢೀಕರಿಸಲು ಪಾವತಿ')
+k('money.deposits_sub','Ticked services ask for a deposit when booked. The slot is held until it is paid; unpaid bookings are released after 2 hours. Leave the amount empty for 25% of the price.','चुनी गई सेवाओं की बुकिंग पर जमा राशि ली जाती है। भुगतान तक स्लॉट रुका रहता है; 2 घंटे में भुगतान न हो तो छोड़ दिया जाता है। राशि खाली छोड़ें तो कीमत का 25%।','ಆಯ್ಕೆಮಾಡಿದ ಸೇವೆಗಳ ಬುಕಿಂಗ್\u200cಗೆ ಠೇವಣಿ ಕೇಳಲಾಗುತ್ತದೆ. ಪಾವತಿಯವರೆಗೆ ಸ್ಲಾಟ್ ಹಿಡಿದಿಡಲಾಗುತ್ತದೆ; 2 ಗಂಟೆಯಲ್ಲಿ ಪಾವತಿಸದಿದ್ದರೆ ಬಿಡಲಾಗುತ್ತದೆ. ಮೊತ್ತ ಖಾಲಿ ಬಿಟ್ಟರೆ ಬೆಲೆಯ 25%.')
+k('money.deposits_need_razorpay','Connect Razorpay in Powers to take deposits.','जमा राशि लेने के लिए Powers में Razorpay जोड़ें।','ಠೇವಣಿ ಪಡೆಯಲು Powers ನಲ್ಲಿ Razorpay ಜೋಡಿಸಿ.')
+k('money.deposit_amount','Deposit amount','जमा राशि','ಠೇವಣಿ ಮೊತ್ತ')
+k('book.held','Your {{service}} on {{when}} is held for you. Pay the deposit to confirm it.','{{when}} को आपकी {{service}} आपके लिए रोकी गई है। पक्की करने के लिए जमा राशि दें।','{{when}} ರಂದು ನಿಮ್ಮ {{service}} ನಿಮಗಾಗಿ ಹಿಡಿದಿಡಲಾಗಿದೆ. ದೃಢೀಕರಿಸಲು ಠೇವಣಿ ಪಾವತಿಸಿ.')
+k('book.pay_deposit','Pay {{amount}} deposit','{{amount}} जमा करें','{{amount}} ಠೇವಣಿ ಪಾವತಿಸಿ')
+k('book.pay_by','Please pay by {{time}}, or the slot is released.','कृपया {{time}} तक भुगतान करें, वरना स्लॉट छोड़ दिया जाएगा।','ದಯವಿಟ್ಟು {{time}} ಒಳಗೆ ಪಾವತಿಸಿ, ಇಲ್ಲದಿದ್ದರೆ ಸ್ಲಾಟ್ ಬಿಡಲಾಗುತ್ತದೆ.')
 k('meta.cancel','Cancel','रद्द करें','ರದ್ದುಮಾಡಿ')
 k('meta.secure','Your token is stored encrypted and only used to send and receive your customers\' messages.','आपका टोकन एन्क्रिप्ट करके रखा जाता है और सिर्फ़ आपके ग्राहकों के संदेश भेजने-पाने के लिए इस्तेमाल होता है।','ನಿಮ್ಮ ಟೋಕನ್ ಅನ್ನು ಎನ್‌ಕ್ರಿಪ್ಟ್ ಮಾಡಿ ಇಡಲಾಗುತ್ತದೆ ಮತ್ತು ನಿಮ್ಮ ಗ್ರಾಹಕರ ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಲು-ಪಡೆಯಲು ಮಾತ್ರ ಬಳಸಲಾಗುತ್ತದೆ.')
 k('meta.f.phone_number_id','Phone number ID','फ़ोन नंबर ID','ಫೋನ್ ಸಂಖ್ಯೆ ID')

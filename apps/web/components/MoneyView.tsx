@@ -78,6 +78,7 @@ export function MoneyView() {
         ))}
       </div>
 
+      <Deposits razorpay={!!profile?.razorpay} />
       <button className="link-btn small" onClick={() => setSettings(!settings)}>{t('money.gst_settings')}</button>
       {settings && profile && <GstSettings profile={profile} onDone={() => { setSettings(false); load(); }} />}
     </section>
@@ -260,5 +261,41 @@ function GstSettings({ profile, onDone }: { profile: Profile; onDone: () => void
       {err && <p className="error">{err}</p>}
       <div className="row"><button className="btn primary">{t('meta.save')}</button></div>
     </form>
+  );
+}
+
+/** Pay to confirm: services that need a deposit before the booking is confirmed. */
+function Deposits({ razorpay }: { razorpay: boolean }) {
+  const { t, money } = useI18n();
+  const [rows, setRows] = useState<{ id: string; name: string; price: number | null; depositRequired: boolean; depositAmount: number | null }[] | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open && !rows) api<any[]>('/ledger/services').then(setRows).catch(() => setRows([]));
+  }, [open, rows]);
+  const save = async (id: string, required: boolean, amount: number | null) => {
+    const r = await api<any>(`/ledger/services/${id}/deposit`, { method: 'PATCH', body: { required, amount } });
+    setRows((xs) => (xs ?? []).map((x) => (x.id === id ? r : x)));
+  };
+  return (
+    <div className="card stack" data-testid="deposits">
+      <button className="link-btn" style={{ textAlign: 'left', padding: 0 }} onClick={() => setOpen(!open)}>{t('money.deposits')}</button>
+      {open && (
+        <>
+          <p className="small muted">{razorpay ? t('money.deposits_sub') : t('money.deposits_need_razorpay')}</p>
+          {rows?.map((r) => (
+            <div key={r.id} className="list-item">
+              <label className="check-line grow">
+                <input type="checkbox" checked={r.depositRequired} disabled={!razorpay} onChange={(e) => save(r.id, e.target.checked, r.depositAmount)} />
+                <span>{r.name}{r.price ? ` · ${money(r.price)}` : ''}</span>
+              </label>
+              {r.depositRequired && (
+                <input className="input" style={{ width: 110 }} inputMode="decimal" aria-label={t('money.deposit_amount')} placeholder={r.price ? money(Math.round(r.price * 0.25)) : '₹'}
+                  defaultValue={r.depositAmount ?? ''} onBlur={(e) => save(r.id, true, e.target.value ? Number(e.target.value) : null)} />
+              )}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
   );
 }

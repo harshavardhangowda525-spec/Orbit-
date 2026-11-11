@@ -7,6 +7,7 @@ import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { hashToken } from '../realtime/ws.gateway';
 import { NudgeService } from '../nudge/nudge.service';
+import { logger } from '../logger';
 import { config } from '../config';
 
 export const slotTaken = () => new AppError(409, 'slot_taken', 'Sorry, that time was just taken. Please pick another time.');
@@ -16,6 +17,9 @@ export interface BusyProvider {
   busy(tx: Tx, from: Date, to: Date): Promise<{ staffId: string | null; intervals: Interval[] } | null>;
   onBookingChanged?(tx: Tx, bookingId: string, change: 'created' | 'moved' | 'cancelled'): void;
 }
+
+/** Ledger collects deposits: returns a payment link when this booking must be paid for to be confirmed. */
+export type DepositProvider = (tx: Tx, booking: any, service: any, customer: any) => Promise<{ url: string; amount: number; payBy: Date } | null>;
 
 export interface BookingInput {
   serviceId: string;
@@ -40,6 +44,11 @@ export class BookingsService {
 
   setBusyProvider(p: BusyProvider) {
     this.busyProvider = p;
+  }
+
+  private depositProvider?: DepositProvider;
+  setDepositProvider(p: DepositProvider) {
+    this.depositProvider = p;
   }
 
   async context(tx: Tx) {
@@ -177,11 +186,28 @@ export class BookingsService {
     );
     liveToBusiness(tx, { type: 'booking.changed', data: { id: booking.id } });
     this.busyProvider?.onBookingChanged?.(tx, booking.id, 'created');
+    // Services with a deposit stay "pending" (the slot is held) until the deposit is paid.
+    let deposit: Awaited<ReturnType<DepositProvider>> = null;
+    if (svc.deposit_required && this.depositProvider && Number(svc.price ?? svc.deposit_amount ?? 0) > 0) {
+      await tx.q('SAVEPOINT deposit');
+      try {
+        deposit = await this.depositProvider(tx, booking, svc, customer);
+        await tx.q('RELEASE SAVEPOINT deposit');
+      } catch (e) {
+        // Payments down: keep the customer's booking (confirmed) rather than lose it.
+        await tx.q('ROLLBACK TO SAVEPOINT deposit');
+        logger.warn(`deposit link failed for booking ${booking.id}: ${(e as Error).message}`, 'Bookings');
+      }
+    }
+    if (deposit) {
+      booking = await tx.one(`UPDATE bookings SET status = 'pending' WHERE id = $1 RETURNING *`, [booking.id]);
+    }
     return {
       booking,
       customer,
       service: svc,
       staffName,
+      deposit,
       manageUrl: `${config.publicBaseUrl}/manage/${token}`,
       localTime: formatTime(input.customer.language ?? ctx.default_language, slot.start, ctx.timezone),
     };
