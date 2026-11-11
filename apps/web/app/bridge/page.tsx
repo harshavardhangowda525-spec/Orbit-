@@ -12,6 +12,7 @@ import { useIntroOnce, usePageVisible } from '@/lib/motion';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
 import { MoneyView } from '@/components/MoneyView';
+import { PlanView } from '@/components/PlanCrew';
 import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
 import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
 import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
@@ -153,6 +154,7 @@ function Bridge() {
       {/* These load business data, so they wait until The Bridge (and the chosen business) is ready. */}
       {data && view === 'people' && <PeopleView />}
       {data && view === 'money' && <MoneyView />}
+      {data && view === 'plan' && <PlanView />}
       {data && view === 'powers' && <PowersView />}
       {data && view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}

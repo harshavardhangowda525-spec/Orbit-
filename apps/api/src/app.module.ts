@@ -23,6 +23,7 @@ import { MetaChannelsModule } from './channels/meta.service';
 import { EmailSmsModule } from './channels/email-sms.service';
 import { LedgerModule } from './ledger/ledger.service';
 import { ZohoModule } from './ledger/zoho.service';
+import { BillingModule } from './billing/billing.service';
 
 @Controller()
 class HealthController {
@@ -50,6 +51,7 @@ class HealthController {
     MetaChannelsModule,
     LedgerModule,
     ZohoModule,
+    BillingModule,
     AuditModule,
     AuthModule,
     TemplatesModule,

@@ -11,7 +11,7 @@ async function main() {
   await app.listen(config.port);
   attachWebSockets(app, app.getHttpServer());
   if (process.env.JOBS_ENABLED !== 'false') {
-    await app.get(JobsService).start([{ name: 'briefing.sweep', everyMs: 15 * 60_000 }, { name: 'powers.gmail_poll', everyMs: 5 * 60_000 }, { name: 'powers.outlook_poll', everyMs: 5 * 60_000 }, { name: 'ledger.reminders', everyMs: 60 * 60_000 }, { name: 'ledger.sync_links', everyMs: 30 * 60_000 }, { name: 'ledger.deposit_expiry', everyMs: 10 * 60_000 }]);
+    await app.get(JobsService).start([{ name: 'briefing.sweep', everyMs: 15 * 60_000 }, { name: 'powers.gmail_poll', everyMs: 5 * 60_000 }, { name: 'powers.outlook_poll', everyMs: 5 * 60_000 }, { name: 'ledger.reminders', everyMs: 60 * 60_000 }, { name: 'ledger.sync_links', everyMs: 30 * 60_000 }, { name: 'ledger.deposit_expiry', everyMs: 10 * 60_000 }, { name: 'nudge.renewals', everyMs: 6 * 60 * 60_000 }]);
   }
   logger.log(`Orbit API listening on :${config.port}`, 'Main');
 }

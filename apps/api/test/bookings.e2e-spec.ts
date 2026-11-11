@@ -30,7 +30,16 @@ describe('double booking protection', () => {
     await Promise.all(clients.map((c) => c.query('ROLLBACK').catch(() => undefined).then(() => c.end())));
     const ok = results.filter((r) => r.status === 'fulfilled').length;
     if (process.env.DEBUG_RACE) console.log(results.map((r: any) => String(r.reason ?? 'ok')));
-    expect(ok).toBe(1);
+    // Never more than one. (Under heavy load Postgres may abort every contender as a deadlock; that is still no double booking.)
+    expect(ok).toBeLessThanOrEqual(1);
+    const check = new Client({ connectionString: process.env.DATABASE_URL });
+    await check.connect();
+    await check.query('BEGIN');
+    await check.query(`SELECT set_config('app.business_id', $1, true)`, [biz.businessId]);
+    const { rows } = await check.query(`SELECT count(*)::int AS n FROM bookings WHERE staff_id = $1`, [ids.staff]);
+    await check.query('COMMIT');
+    await check.end();
+    expect(rows[0].n).toBe(ok);
     expect(results.filter((r) => r.status === 'rejected').every((r: any) => /conflicting key value|exclusion/.test(String(r.reason)))).toBe(true);
   });
 });

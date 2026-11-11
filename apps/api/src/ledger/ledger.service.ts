@@ -501,6 +501,8 @@ export class LedgerService implements OnModuleInit {
     return this.db.withTenant(businessId, async (tx) => {
       const tz = (await tx.one(`SELECT timezone FROM businesses WHERE id = app_current_business()`)).timezone;
       await tx.q(`UPDATE invoices SET status = 'overdue' WHERE kind = 'invoice' AND status = 'sent' AND due_at < $1`, [now]);
+      const crew = await tx.one(`SELECT enabled, auto_approval_rules AS rules FROM agents WHERE agent_key = 'ledger'`);
+      if ((crew && !crew.enabled) || crew?.rules?.invoiceReminders === false) return 0;
       const hour = localParts(now, tz).hour;
       if (hour < 10 || hour >= 19) return 0;
       const due = await tx.q(`SELECT * FROM invoices WHERE kind = 'invoice' AND status = 'overdue' AND reminders_sent < $1 AND customer_id IS NOT NULL`, [REMINDER_DAYS.length]);

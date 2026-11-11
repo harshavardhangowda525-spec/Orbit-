@@ -12,7 +12,7 @@ import { NudgeService } from '../src/nudge/nudge.service';
 import { JobsService } from '../src/jobs/jobs.service';
 import { BriefingService } from '../src/briefing/briefing.service';
 import { attachWebSockets } from '../src/realtime/ws.gateway';
-import { bootApp, onboard, signIn, api } from './helpers';
+import { bootApp, onboard, signIn, api, upgrade } from './helpers';
 
 const TZ = 'Asia/Kolkata';
 type Biz = Awaited<ReturnType<typeof onboard>>;
@@ -33,6 +33,7 @@ describe('bookings, Nudge and briefings', () => {
     nudge = app.get(NudgeService);
     jobs = app.get(JobsService);
     S = await onboard(app, 'salon', 'Nudge Salon');
+    await upgrade(app, S.businessId, 'base'); // Nudge is on paid plans
     const state = (await S.api.get('/onboarding/state').expect(200)).body;
     haircut = state.services.find((s: any) => s.name === 'Haircut');
   });

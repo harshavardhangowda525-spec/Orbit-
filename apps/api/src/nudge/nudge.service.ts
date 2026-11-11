@@ -1,5 +1,6 @@
 import { Injectable, Module, OnModuleInit } from '@nestjs/common';
 import { formatTime, respectQuietHours, type SequenceStep } from '@orbit/shared';
+import { translate } from '@orbit/shared';
 import { DbService, Tx } from '../db/db.service';
 import { config } from '../config';
 import { JobsService } from '../jobs/jobs.service';
@@ -21,11 +22,12 @@ export class NudgeService implements OnModuleInit {
 
   onModuleInit() {
     this.jobs.register('nudge.send', (d) => this.process(d.businessId, d.id));
+    this.jobs.register('nudge.renewals', () => this.scheduleRenewalsAll());
   }
 
   private async biz(tx: Tx) {
     return tx.one(
-      `SELECT b.id, b.name, b.slug, b.timezone, b.default_language, p.quiet_hours, p.contact_cap_per_week, p.address
+      `SELECT b.id, b.name, b.slug, b.timezone, b.default_language, p.quiet_hours, p.contact_cap_per_week, p.address, p.review_url
        FROM businesses b JOIN business_profiles p ON p.business_id = b.id WHERE b.id = app_current_business()`,
     );
   }
@@ -39,7 +41,7 @@ export class NudgeService implements OnModuleInit {
 
   private async schedule(
     tx: Tx,
-    row: { customerId: string; bookingId?: string; leadId?: string; sequenceId: string; stepIndex: number; step: SequenceStep; kind: string; transactional: boolean; sendAt: Date; latest?: Date; key: string; agent: string },
+    row: { customerId: string; bookingId?: string; leadId?: string; sequenceId: string | null; stepIndex: number; step: SequenceStep; kind: string; transactional: boolean; sendAt: Date; latest?: Date; key: string; agent: string },
     now: Date,
   ) {
     const b = await this.biz(tx);
@@ -101,6 +103,55 @@ export class NudgeService implements OnModuleInit {
     }
   }
 
+  /**
+   * Renewals: a customer whose last visit for a repeat service (haircut every 30
+   * days, monthly membership...) is due again, and who has not booked it, gets one
+   * friendly nudge per visit. Uses the business's own "renewal due" sequence when
+   * it has one (e.g. fee reminders), otherwise a short default message.
+   */
+  async scheduleRenewals(businessId: string, now = new Date()) {
+    return this.db.withTenant(businessId, async (tx) => {
+      const due = await tx.q(
+        `SELECT * FROM (
+           SELECT DISTINCT ON (bk.customer_id, bk.service_id) bk.id, bk.customer_id, bk.service_id, bk.end_at, s.renewal_interval_days AS every
+           FROM bookings bk JOIN services s ON s.id = bk.service_id
+           WHERE s.renewal_interval_days IS NOT NULL AND s.active AND s.deleted_at IS NULL AND bk.status = 'completed' AND bk.deleted_at IS NULL AND bk.customer_id IS NOT NULL
+           ORDER BY bk.customer_id, bk.service_id, bk.end_at DESC
+         ) last
+         WHERE last.end_at + make_interval(days => last.every) <= $1::timestamptz + interval '3 days'
+           AND last.end_at + make_interval(days => last.every) > $1::timestamptz - interval '14 days'
+           AND NOT EXISTS (SELECT 1 FROM bookings n WHERE n.customer_id = last.customer_id AND n.service_id = last.service_id AND n.start_at > last.end_at AND n.status IN ('pending', 'confirmed', 'completed') AND n.deleted_at IS NULL)`,
+        [now],
+      );
+      if (!due.length) return 0;
+      const seqs = await tx.q(`SELECT id, steps, owner_agent FROM sequences WHERE active AND trigger = 'renewal_due'`);
+      const lang = (await this.biz(tx)).default_language ?? 'en';
+      let n = 0;
+      for (const d of due) {
+        const dueAt = new Date(new Date(d.end_at).getTime() + d.every * 24 * 60 * MIN);
+        const plans = seqs.length
+          ? seqs.flatMap((s: any) => (s.steps as SequenceStep[]).map((step, i) => ({ seq: s.id, i, step, agent: s.owner_agent })))
+          : [{ seq: null, i: 0, step: { channel: 'whatsapp', delayMin: 0, template: translate(lang, 'nudge.renewal', { name: '{{name}}', service: '{{service}}', business: '{{business}}', link: '{{link}}' }) } as SequenceStep, agent: 'nudge' }];
+        for (const p of plans) {
+          const sendAt = new Date(Math.max(now.getTime() + 2 * MIN, dueAt.getTime() + p.step.delayMin * MIN));
+          const id = await this.schedule(tx, {
+            customerId: d.customer_id, bookingId: d.id, sequenceId: p.seq, stepIndex: p.i, step: p.step, kind: 'renewal', transactional: false,
+            sendAt, key: `renew:${d.id}:${p.seq ?? 'default'}:${p.i}`, agent: p.agent,
+          }, now);
+          if (id) n++;
+        }
+      }
+      return n;
+    });
+  }
+
+  async scheduleRenewalsAll(now = new Date()) {
+    const ids = await this.db.adminTx((tx) => tx.q<{ business_id: string }>(`SELECT DISTINCT business_id FROM services WHERE renewal_interval_days IS NOT NULL AND active AND deleted_at IS NULL`));
+    let n = 0;
+    for (const { business_id } of ids) n += await this.scheduleRenewals(business_id, now).catch((e) => (logger.error(`renewals failed: ${e.message}`, e.stack, 'Nudge'), 0));
+    return n;
+  }
+
   /** Stop all non-transactional messages for a customer (they booked, replied or opted out). */
   async stopForCustomer(tx: Tx, customerId: string, reason: string) {
     await tx.q(
@@ -125,12 +176,26 @@ export class NudgeService implements OnModuleInit {
       const c = await tx.one(`SELECT * FROM customers WHERE id = $1 AND deleted_at IS NULL`, [m.customer_id]);
       if (!c) return done('cancelled', 'customer_deleted');
 
+      // The owner's Crew settings: an agent that is switched off sends nothing; some kinds can be turned off on their own.
+      const agent = await tx.one(`SELECT enabled, auto_approval_rules AS rules FROM agents WHERE agent_key = $1`, [m.agent_key]);
+      if (agent && !agent.enabled) return done('skipped', 'agent_off');
+      const permission: Record<string, string> = { review_request: 'reviewRequests', renewal: 'renewals', follow_up: 'followUps' };
+      if (permission[m.kind] && agent?.rules?.[permission[m.kind]] === false) return done('skipped', 'not_allowed');
+
       let booking: any = null;
       if (m.booking_id) {
         booking = await tx.one(`SELECT bk.*, s.name AS service, s.category FROM bookings bk LEFT JOIN services s ON s.id = bk.service_id WHERE bk.id = $1`, [m.booking_id]);
         if (m.kind === 'reminder' && (!booking || !['pending', 'confirmed'].includes(booking.status) || new Date(booking.start_at) <= now)) {
           return done('cancelled', 'booking_changed');
         }
+      }
+      if (m.kind === 'renewal' && booking) {
+        const again = await tx.one(`SELECT 1 FROM bookings WHERE customer_id = $1 AND service_id = $2 AND start_at > $3 AND status IN ('pending', 'confirmed', 'completed') AND deleted_at IS NULL`, [c.id, booking.service_id, booking.end_at]);
+        if (again) return done('cancelled', 'customer_booked');
+      }
+      if (m.kind === 'review_request') {
+        const recent = await tx.one(`SELECT 1 FROM scheduled_messages WHERE customer_id = $1 AND kind = 'review_request' AND status = 'sent' AND sent_at > now() - interval '90 days'`, [c.id]);
+        if (recent) return done('skipped', 'asked_recently');
       }
       let lead: any = null;
       if (m.kind === 'follow_up' && m.lead_id) {
@@ -169,7 +234,8 @@ export class NudgeService implements OnModuleInit {
         service: booking?.service ?? lead?.interest ?? '',
         interest: lead?.interest ?? booking?.service ?? '',
         time: booking ? formatTime(c.language ?? b.default_language ?? 'en', booking.start_at, b.timezone) : '',
-        review_link: `${config.publicBaseUrl}/${b.slug}`,
+        review_link: b.review_url || `${config.publicBaseUrl}/${b.slug}`,
+        link: `${config.publicBaseUrl}/${b.slug}`,
       });
       const r = await this.channels.deliver(tx, m.preferred_channel, { customer: c, body, agent: m.agent_key });
       if (!r.delivered) return done('skipped', r.reason ?? 'no_channel_connected');
@@ -180,6 +246,8 @@ export class NudgeService implements OnModuleInit {
       } else if (m.kind === 'follow_up') {
         if (lead?.status === 'new') await tx.q(`UPDATE leads SET status = 'contacted' WHERE id = $1`, [lead.id]);
         await postFeed(tx, 'nudge', 'follow_up_sent', { key: 'feed.nudge.follow_up_sent', params: { customer: firstName } }, { entityType: 'lead', entityId: lead?.id, minutesSaved: 3, channel: r.channel ?? undefined });
+      } else if (m.kind === 'renewal') {
+        await postFeed(tx, 'nudge', 'renewal_sent', { key: 'feed.nudge.renewal_sent', params: { customer: firstName, service: booking?.service ?? '' } }, { entityType: 'customer', entityId: c.id, minutesSaved: 3, channel: r.channel ?? undefined });
       } else {
         await postFeed(tx, 'nudge', 'review_request_sent', { key: 'feed.nudge.review_request', params: { customer: firstName } }, { entityType: 'customer', entityId: c.id, minutesSaved: 2, channel: r.channel ?? undefined });
       }

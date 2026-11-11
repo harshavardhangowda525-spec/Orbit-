@@ -1,3 +1,4 @@
+import { syncCrewToPlan } from '../billing/crew-plan';
 import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { BUSINESS_TYPES } from '@orbit/shared';
@@ -73,6 +74,7 @@ export class AdminController {
         planId = p.id;
       }
       const after = await tx.one(`UPDATE businesses SET status = COALESCE($2, status), plan_id = $3 WHERE id = $1 RETURNING status, plan_id`, [id, body.status ?? null, planId]);
+      await syncCrewToPlan(tx, id, before.plan_id, planId);
       await this.audit.write({ businessId: id, actorId: u.id, actorKind: 'admin', action: 'admin.business.update', entity: 'business', entityId: id, before, after, ip }, tx);
       return after;
     });

@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import type { BridgeData } from '@/lib/bridge-types';
 import { AgentDot } from './bridge/Hero';
+import { CrewSettings } from './PlanCrew';
 import { timeAgo } from './bridge/Feed';
 
 function useLoad<T>(path: string) {
@@ -58,10 +59,11 @@ export function CrewView({ data, selected, onSelect }: { data: BridgeData; selec
             <li key={g.id} className="small">{ts(g.sentence)} <span className="muted">· {timeAgo(g.at, t)}</span></li>
           ))}
           {(tasks ?? []).filter((x) => x.agent === sel).slice(0, 5).map((x) => (
-            <li key={x.id} className="small muted">{x.goal} · {t(`task.${x.status}`)}</li>
+            <li key={x.id} className="small muted">{/^[a-z_]+(\.[a-z_]+)+$/.test(x.goal) ? t(x.goal, { agent: data.crew.find((c) => c.agent === x.agent)?.name ?? '', customer: '', service: '', channel: '' }) : x.goal} · {t(`task.${x.status}`)}</li>
           ))}
         </ul>
         {!data.feed.some((g) => g.agent === sel) && <p className="muted small">{t('crew.nothing_yet')}</p>}
+        <CrewSettings key={sel} agent={sel} />
       </div>
     </section>
   );

@@ -7,6 +7,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { NudgeService } from '../nudge/nudge.service';
 import { ConversationsService } from '../inbox/conversations.service';
 import { finishActivity, startActivity } from '../common/feed';
+import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
 import { ariaSystemPrompt, amountsIn, detectLanguage, wantsHuman } from './prompts';
@@ -51,7 +52,23 @@ export class AriaService {
       const staff = await tx.q(`SELECT id, name FROM staff WHERE active AND deleted_at IS NULL ORDER BY created_at`);
       const history = await tx.q(`SELECT direction, sender, body FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT $2`, [conversationId, HISTORY]);
       const customer = conv.customer_id ? await tx.one(`SELECT name FROM customers WHERE id = $1`, [conv.customer_id]) : null;
-      return { conv, biz, agent, services, staff, history: history.reverse(), customer };
+      // Plan limit: AI conversations this month (a conversation counts once, however long it is).
+      const usage = await tx.one(
+        `SELECT (p.limits->>'aiConversationsPerMonth')::int AS cap, COALESCE(p.limits->>'overage', 'block') AS overage,
+                (SELECT count(DISTINCT conversation_id)::int FROM ai_usage WHERE agent_key = 'aria' AND conversation_id IS NOT NULL AND created_at >= date_trunc('month', now())) AS used,
+                EXISTS (SELECT 1 FROM ai_usage WHERE conversation_id = $1 AND created_at >= date_trunc('month', now())) AS counted
+         FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`,
+        [conversationId],
+      );
+      const overLimit = usage && usage.cap !== null && usage.overage !== 'charge' && !usage.counted && usage.used >= usage.cap;
+      if (overLimit) {
+        const told = await tx.one(`SELECT 1 FROM notifications WHERE type = 'plan_limit' AND created_at >= date_trunc('month', now())`);
+        if (!told) {
+          await tx.q(`INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'plan_limit', $1, '/bridge?view=plan')`, [JSON.stringify({ key: 'notify.plan_limit', params: { count: usage.cap } })]);
+          liveToBusiness(tx, { type: 'notification.new' });
+        }
+      }
+      return { conv, biz, agent, services, staff, history: history.reverse(), customer, overLimit };
     });
     if (!prep) return { replied: false };
     const { conv, biz, agent, history } = prep;
@@ -64,6 +81,7 @@ export class AriaService {
 
     // Guardrails that never wait for the AI.
     if (!agent?.enabled || biz.status === 'paused') return this.finish(businessId, conversationId, say('aria.auto.team_will_reply'), { handover: 'Aria is switched off' });
+    if (prep.overLimit) return this.finish(businessId, conversationId, say('aria.auto.team_will_reply'), { handover: "This month's AI conversations on the plan are used up" });
     if (wantsHuman(lastIn.body)) return this.finish(businessId, conversationId, say('aria.auto.handover'), { handover: 'Customer asked for a person' });
 
     const template = await this.templates.get(biz.type as BusinessType);

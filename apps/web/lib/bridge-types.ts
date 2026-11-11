@@ -20,6 +20,6 @@ export interface BridgeData {
   suggestions: string[];
 }
 
-export const VIEWS = ['today', 'crew', 'people', 'money', 'rewind', 'tomorrow', 'powers', 'details'] as const;
+export const VIEWS = ['today', 'crew', 'people', 'money', 'rewind', 'tomorrow', 'powers', 'details', 'plan'] as const;
 export type View = (typeof VIEWS)[number];
 

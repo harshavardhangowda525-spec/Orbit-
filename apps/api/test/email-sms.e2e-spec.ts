@@ -3,7 +3,7 @@
  */
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { bootApp, onboard } from './helpers';
+import { bootApp, onboard, upgrade } from './helpers';
 import { JobsService } from '../src/jobs/jobs.service';
 import { DbService } from '../src/db/db.service';
 import { ChannelsService } from '../src/channels/channels.service';
@@ -44,7 +44,7 @@ describe('Outlook and SMS', () => {
     db = app.get(DbService);
     svc = app.get(EmailSmsService);
     a = await onboard(app, 'spa', 'Wave Spa');
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'business') WHERE id = $1`, [a.businessId]);
+    await upgrade(app, a.businessId);
   });
   afterAll(async () => {
     global.fetch = realFetch;

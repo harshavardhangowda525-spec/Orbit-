@@ -5,7 +5,7 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { createHmac } from 'node:crypto';
-import { bootApp, onboard } from './helpers';
+import { bootApp, onboard, upgrade } from './helpers';
 import { DbService } from '../src/db/db.service';
 import { JobsService } from '../src/jobs/jobs.service';
 import { LedgerService } from '../src/ledger/ledger.service';
@@ -58,7 +58,7 @@ describe('Deposits and Zoho Books', () => {
     jobs = app.get(JobsService);
     ledger = app.get(LedgerService);
     a = await onboard(app, 'salon', 'Dew Salon');
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'business') WHERE id = $1`, [a.businessId]);
+    await upgrade(app, a.businessId);
     serviceId = (await tenant(a.businessId, (tx) => tx.one(`UPDATE services SET deposit_required = true, deposit_amount = 200, price = 1000 WHERE id = (SELECT id FROM services WHERE duration_min > 0 ORDER BY sort_order LIMIT 1) RETURNING id`))).id;
     hook = (await a.api.post('/ledger/razorpay/connect', { keyId: 'rzp_test_dew123456', keySecret: 'secretsecret123' }).expect(201)).body;
   });

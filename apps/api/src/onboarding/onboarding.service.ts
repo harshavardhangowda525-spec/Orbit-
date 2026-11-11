@@ -178,6 +178,10 @@ export class OnboardingService {
         }
       }
 
+      const cap = await tx.one(`SELECT (p.limits->>'staffCalendars')::int AS n FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`);
+      if (cap?.n != null && input.staff.length > cap.n) {
+        throw badRequest('upgrade_needed', `Your plan includes ${cap.n} staff calendar${cap.n === 1 ? '' : 's'}. Upgrade to add more people.`);
+      }
       const keepStaff = input.staff.map((s) => s.id).filter(Boolean) as string[];
       await tx.q(`UPDATE staff SET deleted_at = now(), active = false WHERE deleted_at IS NULL AND NOT (id = ANY($1::uuid[]))`, [keepStaff]);
       for (const s of input.staff) {

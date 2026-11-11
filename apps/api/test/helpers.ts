@@ -99,3 +99,17 @@ export async function asTenant<T>(c: Client, businessId: string, fn: () => Promi
     throw e;
   }
 }
+
+/** Move a business to a plan the way the app does (admin or billing): its Crew follows the plan. */
+export async function upgrade(app: NestExpressApplication, businessIds: string | string[], code = 'business') {
+  const { DbService } = require('../src/db/db.service');
+  const { syncCrewToPlan } = require('../src/billing/crew-plan');
+  const db = app.get(DbService);
+  for (const id of Array.isArray(businessIds) ? businessIds : [businessIds]) {
+    await db.adminTx(async (tx: any) => {
+      const before = await tx.one(`SELECT plan_id FROM businesses WHERE id = $1`, [id]);
+      const after = await tx.one(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = $2) WHERE id = $1 RETURNING plan_id`, [id, code]);
+      await syncCrewToPlan(tx, id, before.plan_id, after.plan_id);
+    });
+  }
+}

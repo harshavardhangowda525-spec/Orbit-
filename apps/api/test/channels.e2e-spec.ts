@@ -6,7 +6,7 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { createHmac } from 'node:crypto';
-import { bootApp, onboard, api } from './helpers';
+import { bootApp, onboard, api, upgrade } from './helpers';
 import { JobsService } from '../src/jobs/jobs.service';
 import { DbService } from '../src/db/db.service';
 import { ChannelsService } from '../src/channels/channels.service';
@@ -71,7 +71,7 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
     a = await onboard(app, 'salon', 'Wave Salon');
     b = await onboard(app, 'gym', 'Wave Gym');
     // Messaging channels are on paid plans.
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'business') WHERE id = ANY($1::uuid[])`, [[a.businessId, b.businessId]]);
+    await upgrade(app, [a.businessId, b.businessId]);
   });
   afterAll(async () => {
     global.fetch = realFetch;

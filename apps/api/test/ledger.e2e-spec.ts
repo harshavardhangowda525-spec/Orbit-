@@ -6,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { createHmac } from 'node:crypto';
 import { Client } from 'pg';
-import { bootApp, onboard } from './helpers';
+import { bootApp, onboard, upgrade } from './helpers';
 import { DbService } from '../src/db/db.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { fiscalYear } from '@orbit/shared';
@@ -46,7 +46,7 @@ describe('Ledger', () => {
     ledger = app.get(LedgerService);
     a = await onboard(app, 'salon', 'Mint Salon');
     b = await onboard(app, 'gym', 'Mint Gym');
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'business') WHERE id = ANY($1::uuid[])`, [[a.businessId, b.businessId]]);
+    await upgrade(app, [a.businessId, b.businessId]);
   });
   afterAll(async () => {
     global.fetch = realFetch;

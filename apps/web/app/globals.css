@@ -276,3 +276,20 @@ textarea.input { min-height: 220px; font-family: ui-monospace, Menlo, monospace;
 .line-row:not(:has(select)) { grid-template-columns: 1fr 64px 110px; }
 .inv-preview { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--soft); }
 @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } .line-row { grid-template-columns: 1fr 52px 84px 68px; } }
+
+/* Plan */
+.plan h3 { margin: 0; font-size: 1rem; }
+.usage-row { display: flex; justify-content: space-between; font-size: 0.92rem; }
+.bar { height: 8px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #5ee0b5, #a99bff); }
+.bar i.full { background: linear-gradient(90deg, #ff9a7a, #ff6b6b); }
+.plan-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.plan-card { display: flex; flex-direction: column; gap: 10px; }
+.plan-card.current { outline: 2px solid #a99bff; }
+.plan-name { font-size: 1.1rem; }
+.plan-price { font-size: 1.6rem; font-weight: 800; }
+.plan-price span { font-size: 0.85rem; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.plan-card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+/* Crew settings */
+.crew-settings { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.crew-settings .field { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 0.9rem; }
