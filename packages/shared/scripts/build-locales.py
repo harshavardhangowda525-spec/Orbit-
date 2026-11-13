@@ -368,6 +368,8 @@ k('feed.group.follow_up_sent','{{agent}} followed up with {{count}} people','{{a
 k('card.handover','{{customer}} needs a person: {{reason}}','{{customer}} को किसी इंसान की ज़रूरत है: {{reason}}','{{customer}} ಅವರಿಗೆ ಒಬ್ಬ ವ್ಯಕ್ತಿ ಬೇಕು: {{reason}}')
 k('card.handover_visitor','A website visitor needs a person: {{reason}}','एक वेबसाइट विज़िटर को किसी इंसान की ज़रूरत है: {{reason}}','ವೆಬ್‌ಸೈಟ್ ಸಂದರ್ಶಕರಿಗೆ ಒಬ್ಬ ವ್ಯಕ್ತಿ ಬೇಕು: {{reason}}')
 k('card.option.let_aria','Let Aria handle it','Aria को संभालने दें','Aria ನೋಡಿಕೊಳ್ಳಲಿ')
+k('notify.handover_visitor','A customer wants to talk to a person','एक ग्राहक किसी इंसान से बात करना चाहते हैं','ಒಬ್ಬ ಗ್ರಾಹಕರು ವ್ಯಕ್ತಿಯೊಂದಿಗೆ ಮಾತನಾಡಲು ಬಯಸುತ್ತಾರೆ')
+k('feed.aria.handover_visitor','{{agent}} passed a customer to you — they want to talk to a person','{{agent}} ने एक ग्राहक को आपको सौंपा — वे किसी इंसान से बात करना चाहते हैं','{{agent}} ಒಬ್ಬ ಗ್ರಾಹಕರನ್ನು ನಿಮಗೆ ವರ್ಗಾಯಿಸಿದೆ — ಅವರು ವ್ಯಕ್ತಿಯೊಂದಿಗೆ ಮಾತನಾಡಲು ಬಯಸುತ್ತಾರೆ')
 k('notify.handover','{{customer}} wants to talk to a person','{{customer}} किसी इंसान से बात करना चाहते हैं','{{customer}} ವ್ಯಕ್ತಿಯೊಂದಿಗೆ ಮಾತನಾಡಲು ಬಯಸುತ್ತಾರೆ')
 k('notify.morning_briefing','Good morning! Your briefing is ready.','सुप्रभात! आपकी ब्रीफ़िंग तैयार है।','ಶುಭೋದಯ! ನಿಮ್ಮ ಬ್ರೀಫಿಂಗ್ ಸಿದ್ಧವಾಗಿದೆ.')
 k('notify.evening_summary','Your day is done. See the summary.','आपका दिन पूरा हुआ। सारांश देखें।','ನಿಮ್ಮ ದಿನ ಮುಗಿಯಿತು. ಸಾರಾಂಶ ನೋಡಿ.')

@@ -1,6 +1,7 @@
 'use client';
 
 import './bridge.css';
+import './bridge-glow.css';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Sentence } from '@orbit/shared';
@@ -113,7 +114,7 @@ function Bridge() {
   );
 
   return (
-    <main className={`br space-theme ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <main className={`br space-theme ${view === 'today' && data ? 'fit' : ''} ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <SpaceBackdrop variant="app" />
       <Header
         dayName={dayName}
@@ -167,6 +168,19 @@ function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready
   const { t, ts } = useI18n();
   const [notes, setNotes] = useState<{ unread: number; items: { id: string; title: Sentence; link: string | null; at: string; readAt: string | null }[] } | null>(null);
   const [open, setOpen] = useState(false);
+  const bellArea = useRef<HTMLDivElement>(null);
+  // Close the panel on a tap outside it or on Escape.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !bellArea.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
   const loadNotes = useCallback(() => api('/notifications').then(setNotes).catch(() => undefined), []);
   useEffect(() => {
     if (ready) loadNotes();
@@ -185,6 +199,7 @@ function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready
       </div>
       <div className="br-desktop-only">{switcher}</div>
       <LanguagePicker compact />
+      <div className="bell-area" ref={bellArea}>
       <button className="bell" aria-label={t('bridge.notifications', { count: notes?.unread ?? 0 })} aria-expanded={open}
         onClick={() => {
           setOpen(!open);
@@ -197,17 +212,19 @@ function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready
         {!!notes?.unread && <span className="dot" data-testid="bell-dot" />}
       </button>
       {open && (
-        <div className="card notes" role="dialog" aria-label={t('bridge.notifications_title')}>
-          <div className="row between"><b>{t('bridge.notifications_title')}</b><button className="link-btn" onClick={signOut}>{t('bridge.sign_out')}</button></div>
-          {isAdmin && <a className="chip" href="/admin" style={{ marginTop: 8 }}>{t('bridge.admin')}</a>}
+        <div className="notes" role="dialog" aria-label={t('bridge.notifications_title')} data-testid="notes">
+          <div className="notes-head"><b>{t('bridge.notifications_title')}</b><button className="link-btn small" onClick={signOut}>{t('bridge.sign_out')}</button></div>
+          {isAdmin && <a className="chip" href="/admin" style={{ margin: '0 0 8px' }}>{t('bridge.admin')}</a>}
           {!notes?.items.length && <p className="muted small">{t('bridge.no_notifications')}</p>}
           {notes?.items.map((n) => (
-            <a key={n.id} href={n.link ?? '#'} className="list-item" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <span className="grow small"><b style={{ fontWeight: n.readAt ? 600 : 800 }}>{ts(n.title)}</b><br /><span className="muted">{timeAgo(n.at, t)}</span></span>
+            <a key={n.id} href={n.link ?? '#'} className={`note-row ${n.readAt ? '' : 'unread'}`}>
+              <span className="note-text">{ts(n.title)}</span>
+              <span className="note-time">{timeAgo(n.at, t)}</span>
             </a>
           ))}
         </div>
       )}
+      </div>
     </header>
   );
 }

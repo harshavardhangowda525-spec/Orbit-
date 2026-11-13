@@ -43,8 +43,8 @@ export class ConversationsService {
       [conversationId],
     );
     if (!conv) return;
-    const c = conv.customer_id ? await tx.one(`SELECT name FROM customers WHERE id = $1`, [conv.customer_id]) : null;
-    const who = (c?.name ?? '').split(' ')[0] || null;
+    const c = conv.customer_id ? await tx.one(`SELECT name, phone FROM customers WHERE id = $1`, [conv.customer_id]) : null;
+    const who = (c?.name ?? '').split(' ')[0] || c?.phone || null;
     await tx.q(
       `INSERT INTO approval_cards (agent_key, type, title, context, options, default_option, expires_at)
        VALUES ('aria', 'handover', $1, $2, $3, 'aria', now() + interval '12 hours')`,
@@ -59,9 +59,9 @@ export class ConversationsService {
     );
     await tx.q(
       `INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'handover', $1, $2)`,
-      [JSON.stringify({ key: 'notify.handover', params: { customer: who ?? '—' } }), `/inbox/${conversationId}`],
+      [JSON.stringify(who ? { key: 'notify.handover', params: { customer: who } } : { key: 'notify.handover_visitor', params: {} }), `/inbox/${conversationId}`],
     );
-    await postFeed(tx, 'aria', 'handover', { key: 'feed.aria.handover', params: { customer: who ?? '—' } }, { entityType: 'conversation', entityId: conversationId, channel: conv.channel });
+    await postFeed(tx, 'aria', 'handover', who ? { key: 'feed.aria.handover', params: { customer: who } } : { key: 'feed.aria.handover_visitor', params: {} }, { entityType: 'conversation', entityId: conversationId, channel: conv.channel });
     liveToBusiness(tx, { type: 'card.new' });
     liveToBusiness(tx, { type: 'notification.new' });
     liveToBusiness(tx, { type: 'conversation.updated', data: { id: conversationId } });

@@ -51,7 +51,7 @@ services:
       - key: PLATFORM_ADMIN_EMAILS
         sync: false
       - key: AI_PROVIDER
-        value: fake            # change to groq or claude once its key is set
+        value: groq            # groq | claude | fake (offline demo)
       - key: GROQ_API_KEY
         sync: false
       # WhatsApp / Instagram / Messenger: Orbit's Meta app (docs/DEPLOY.md).

@@ -1,0 +1,129 @@
+/*
+ * The Bridge, second pass: the header always stays above the glass cards (its
+ * notification panel used to slide under them), the Today view fits one screen
+ * on desktop (columns scroll on their own when they hold more), and a few
+ * finishing touches: aurora behind the Crew, glowing timeline, gradient type.
+ * Animations stay on transform/opacity only.
+ */
+
+/* ---------- Header above everything else on the page ---------- */
+.space-theme > header.br-head { z-index: 60; }
+.bell-area { position: relative; flex: none; }
+.notes {
+  position: absolute; right: 0; top: calc(100% + 10px); width: min(380px, calc(100vw - 32px)); z-index: 70;
+  max-height: min(70vh, 560px); overflow-y: auto; overscroll-behavior: contain;
+  border-radius: 22px; padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  animation: notes-in 0.22s var(--ease) both; transform-origin: top right;
+}
+@keyframes notes-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
+.space-theme .notes {
+  background: linear-gradient(160deg, rgba(38, 33, 96, 0.98), rgba(14, 12, 40, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: var(--glass-edge), 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+.notes-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 4px; }
+.note-row { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 14px; color: inherit !important; text-decoration: none; position: relative; }
+.note-row:hover { background: rgba(255, 255, 255, 0.07); }
+.note-row .note-text { font-size: 14px; font-weight: 600; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.note-row.unread .note-text { font-weight: 800; }
+.note-row.unread::before { content: ''; position: absolute; left: 0; top: 16px; width: 4px; height: 4px; border-radius: 999px; background: #ff9a7a; box-shadow: 0 0 8px #ff9a7a; }
+.note-row .note-time { font-size: 12px; color: var(--muted); }
+
+/* ---------- Header polish ---------- */
+.space-theme .br-head h1 {
+  background: linear-gradient(100deg, #ffffff 0%, #e4dfff 45%, #a99bff 75%, #5ee0b5 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.space-theme .bell { transition: transform 0.2s var(--ease), background 0.2s; }
+.space-theme .bell:hover { transform: translateY(-1px); background: rgba(255, 255, 255, 0.16); }
+.space-theme .bell[aria-expanded='true'] { background: rgba(169, 155, 255, 0.28); border-color: rgba(169, 155, 255, 0.6); }
+
+/* ---------- Section titles with a small glowing mark ---------- */
+.space-theme .zone-head h2 { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: -0.01em; }
+.space-theme .zone-head h2::before { content: ''; width: 8px; height: 8px; border-radius: 3px; transform: rotate(45deg); background: linear-gradient(135deg, #a99bff, #5ee0b5); box-shadow: 0 0 10px rgba(169, 155, 255, 0.8); }
+.space-theme .zone-head .count { background: rgba(255, 154, 122, 0.16); color: #ffd9cc; border: 1px solid rgba(255, 154, 122, 0.35); padding: 3px 10px; border-radius: 999px; font-size: 12px; }
+
+/* ---------- Hero: aurora behind the Crew ---------- */
+.space-theme .hero-card { position: relative; isolation: isolate; }
+.space-theme .hero-card::before {
+  content: ''; position: absolute; z-index: -1; left: 50%; top: 42%; width: 140%; aspect-ratio: 1; margin-left: -70%; margin-top: -70%;
+  background: conic-gradient(from 0deg, rgba(122, 104, 255, 0) 0deg, rgba(122, 104, 255, 0.35) 70deg, rgba(94, 224, 181, 0.22) 140deg, rgba(255, 154, 122, 0.18) 210deg, rgba(122, 104, 255, 0) 300deg);
+  filter: blur(40px); opacity: 0.85; animation: spin 28s linear infinite; pointer-events: none;
+}
+.space-theme .orbit .pulse-core { box-shadow: 0 0 0 10px rgba(255, 255, 255, 0.05), 0 0 50px rgba(169, 155, 255, 0.55); }
+.space-theme .pulse-line { font-size: 15px; line-height: 1.45; color: #efeaff; }
+
+/* ---------- Stat tiles ---------- */
+.space-theme .tile { position: relative; overflow: hidden; transition: transform 0.2s var(--ease), background 0.2s; }
+.space-theme .tile::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; height: 2px; border-radius: 0 0 4px 4px; background: linear-gradient(90deg, transparent, var(--tile-glow, #a99bff), transparent); opacity: 0.9; }
+.space-theme .tile:nth-child(1) { --tile-glow: #5ee0b5; }
+.space-theme .tile:nth-child(2) { --tile-glow: #a99bff; }
+.space-theme .tile.attn { --tile-glow: #ff9a7a; }
+.space-theme .tile b { background: linear-gradient(180deg, #ffffff, #d9d3ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.space-theme .tile.attn b { background: none; color: #ffd9cc; }
+.space-theme .hero-tiles .tile.attn b { -webkit-background-clip: border-box; background-clip: border-box; color: var(--attn-hero-ink); }
+
+/* ---------- Needs You: a light runs along the top edge ---------- */
+.space-theme .decision { overflow: hidden; }
+.space-theme .decision::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 154, 122, 0.9) 30%, rgba(169, 155, 255, 0.9) 70%, transparent 100%);
+}
+.space-theme .clear { border-color: rgba(94, 224, 181, 0.35); }
+
+/* ---------- Crew feed: a glowing timeline ---------- */
+.space-theme .feed2 { position: relative; gap: 10px; }
+.space-theme .feed2::before {
+  content: ''; position: absolute; left: 30px; top: 18px; bottom: 18px; width: 2px; border-radius: 2px;
+  background: linear-gradient(180deg, rgba(169, 155, 255, 0.6), rgba(94, 224, 181, 0.35) 60%, rgba(255, 255, 255, 0));
+}
+.space-theme .feed2 li { position: relative; }
+.space-theme .feed2 .agent-dot { position: relative; z-index: 1; box-shadow: 0 0 0 3px rgba(12, 10, 34, 0.9), 0 0 16px var(--c); }
+.space-theme .feed2 li > .rowbtn { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+/* ---------- Earnings: warm gradient total ---------- */
+.space-theme .earn { position: relative; overflow: hidden; }
+.space-theme .earn .total { background: linear-gradient(100deg, #ffffff 10%, #ffe2a8 55%, #5ee0b5 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.space-theme .earn::before { content: ''; position: absolute; right: -60px; top: -60px; width: 180px; height: 180px; border-radius: 999px; background: radial-gradient(circle, rgba(255, 226, 168, 0.25), transparent 70%); pointer-events: none; }
+
+/* The plan's usage-bar style (.bar) must not squash the earnings rows. */
+.earn .bar { height: auto; background: none; overflow: visible; border-radius: 0; }
+
+/* ---------- Cards lift and glow under the pointer ---------- */
+@media (hover: hover) {
+  .space-theme .decision, .space-theme .earn, .space-theme .briefing { transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+  .space-theme .earn:hover, .space-theme .briefing:hover { transform: translateY(-2px); box-shadow: var(--glass-edge), 0 22px 60px rgba(60, 45, 170, 0.45); }
+}
+
+/* ---------- Desktop: Today fits one screen; columns scroll on their own ---------- */
+@media (min-width: 1024px) and (min-height: 620px) {
+  .br.fit { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
+  .br.fit > .br-grid { flex: 1; min-height: 0; align-items: stretch; }
+  .br.fit .br-col {
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px 8px 16px; margin: -6px -8px 0;
+    scrollbar-width: thin; scrollbar-color: transparent transparent;
+  }
+  .br.fit .br-col:hover { scrollbar-color: rgba(255, 255, 255, 0.22) transparent; }
+  .br.fit .br-col::-webkit-scrollbar { width: 6px; }
+  .br.fit .br-col::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
+  .br.fit .br-col:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); }
+  /* The Crew card fills its column; the orbit shrinks on shorter screens. */
+  .br.fit .br-col > * { flex-shrink: 0; }
+  .br.fit .br-col:first-child > .hero-card { flex: 1 0 auto; display: flex; flex-direction: column; }
+  /* Spare height goes around the orbit rather than into one gap. */
+  .br.fit .hero-card .orbit { margin-top: auto; margin-bottom: auto; }
+  .br.fit .hero-card .ticker { margin-top: auto; }
+  .br.fit .orbit { width: min(320px, 100%, max(170px, calc(100dvh - 500px))); }
+  /* Ask Orbit stays at the bottom of the middle column while the cards above it scroll. */
+  .br.fit .br-col > .br-desktop-only:has(.cmd) { order: 99; position: sticky; bottom: 0; z-index: 5; margin-top: auto; padding-top: 8px; }
+  /* The feed fades out at the bottom edge instead of being cut. */
+  .br.fit .br-col:last-child { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); padding-bottom: 48px; }
+  .br.fit .br-head { margin-bottom: 18px; }
+}
+
+@media (max-width: 480px) { .br-head h1 { font-size: 19px; line-height: 1.2; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .space-theme .hero-card::before, .notes { animation: none; }
+}

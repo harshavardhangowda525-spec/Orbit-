@@ -50,7 +50,9 @@ export const runtime = {
   jobsMode: (process.env.JOBS_MODE ?? (process.env.NODE_ENV === 'test' ? 'inline' : 'bullmq')) as 'bullmq' | 'inline',
   /** "redis" fans live updates out across API instances; "local" is single-process (tests). */
   realtimeMode: (process.env.REALTIME_MODE ?? (process.env.NODE_ENV === 'test' ? 'local' : 'redis')) as 'redis' | 'local',
-  aiProvider: (process.env.AI_PROVIDER ?? 'claude').trim().toLowerCase() as 'claude' | 'groq' | 'fake',
+  /** AI_PROVIDER if set; otherwise whichever key is present (Groq, then Claude), else the offline demo brain. */
+  aiProvider: (process.env.AI_PROVIDER?.trim() ||
+    (process.env.GROQ_API_KEY ? 'groq' : process.env.ANTHROPIC_API_KEY ? 'claude' : process.env.NODE_ENV === 'test' ? 'fake' : 'claude')).toLowerCase() as 'claude' | 'groq' | 'fake',
   aiModel: process.env.AI_MODEL ?? 'claude-opus-5-5',
   /** 32-byte key (base64) for encrypting Power tokens. */
   powersKey: process.env.POWERS_ENCRYPTION_KEY ?? '',
