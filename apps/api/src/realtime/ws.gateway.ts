@@ -1,17 +1,19 @@
 import type { Server } from 'node:http';
-import { createHash } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { INestApplication } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { RealtimeService } from './realtime.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { logger } from '../logger';
+import { VoiceService } from '../voice/voice.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
+import { hashToken } from './hash';
+export { hashToken };
 
 /**
- * WebSocket endpoint at /ws.
+ * WebSocket endpoints: /ws (below) and /voice/exotel/<key>, /voice/web (VoiceService).
+ * Live updates at /ws:
  *   Owners/staff:  /ws?token=<jwt>&business=<id>   -> live updates for that business
  *   Customers:     /ws?visitor=<token>&conversation=<id> -> their own chat only
  * Access is checked exactly like the REST API (membership / visitor token).
@@ -20,7 +22,20 @@ export function attachWebSockets(app: INestApplication, server: Server) {
   const guard = app.get(JwtAuthGuard);
   const db = app.get(DbService);
   const realtime = app.get(RealtimeService);
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+  let voice: VoiceService | null = null;
+  try {
+    voice = app.get(VoiceService, { strict: false });
+  } catch {
+    voice = null;
+  }
+  // One upgrade router: /ws for live updates, /voice/* for phone and browser calls.
+  server.on('upgrade', (req, socket, head) => {
+    const path = new URL(req.url ?? '/', 'http://x').pathname;
+    if (path === '/ws') wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    else if (voice && (path.startsWith('/voice/exotel/') || path === '/voice/web')) voice.handleUpgrade(req, socket, head);
+    else socket.destroy();
+  });
 
   wss.on('connection', async (socket: WebSocket & { alive?: boolean }, req) => {
     const url = new URL(req.url ?? '/', 'http://x');
@@ -76,6 +91,13 @@ export function attachWebSockets(app: INestApplication, server: Server) {
   }, 30_000);
   beat.unref();
   wss.on('close', () => clearInterval(beat));
+  // Upgraded sockets are not tracked by the HTTP server: end them on shutdown so close() can finish.
+  const close = server.close.bind(server);
+  server.close = ((cb?: (err?: Error) => void) => {
+    for (const c of wss.clients) c.terminate();
+    voice?.closeAll();
+    return close(cb);
+  }) as typeof server.close;
   server.on('close', () => wss.close());
   logger.log('WebSocket endpoint ready at /ws', 'Realtime');
   return wss;

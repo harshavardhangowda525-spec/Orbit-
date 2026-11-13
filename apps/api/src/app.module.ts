@@ -24,6 +24,7 @@ import { EmailSmsModule } from './channels/email-sms.service';
 import { LedgerModule } from './ledger/ledger.service';
 import { ZohoModule } from './ledger/zoho.service';
 import { BillingModule } from './billing/billing.service';
+import { VoiceModule } from './voice/voice.module';
 
 @Controller()
 class HealthController {
@@ -52,6 +53,7 @@ class HealthController {
     LedgerModule,
     ZohoModule,
     BillingModule,
+    VoiceModule,
     AuditModule,
     AuthModule,
     TemplatesModule,

@@ -7,7 +7,7 @@ import { DbService } from '../db/db.service';
 import { Public } from '../auth/guards';
 import { ZodPipe } from '../common/zod.pipe';
 import { AppError, notFound } from '../common/errors';
-import { hashToken } from '../realtime/ws.gateway';
+import { hashToken } from '../realtime/hash';
 import { ConversationsService } from '../inbox/conversations.service';
 import { AriaService } from './aria.service';
 import { detectLanguage } from './prompts';

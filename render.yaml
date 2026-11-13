@@ -66,6 +66,9 @@ services:
         sync: false
       - key: MICROSOFT_REDIRECT_URI
         sync: false
+      # Vox phone calls: Sarvam speech key (docs/DEPLOY.md).
+      - key: SARVAM_API_KEY
+        sync: false
       # Zoho Books: Orbit's Zoho app (docs/DEPLOY.md).
       - key: ZOHO_CLIENT_ID
         sync: false

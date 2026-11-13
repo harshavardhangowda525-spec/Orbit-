@@ -7,7 +7,7 @@ import { CurrentTenant, Public, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { ZodPipe } from '../common/zod.pipe';
 import { badRequest, notFound } from '../common/errors';
-import { hashToken } from '../realtime/ws.gateway';
+import { hashToken } from '../realtime/hash';
 import { BookingsService } from './bookings.service';
 
 const SlotQuery = z.object({

@@ -8,6 +8,7 @@ import type { BridgeData } from '@/lib/bridge-types';
 import { AgentDot } from './bridge/Hero';
 import { CrewSettings } from './PlanCrew';
 import { timeAgo } from './bridge/Feed';
+import { VoxPanel } from './VoxPanel';
 
 function useLoad<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -97,7 +98,7 @@ const GROUPS = ['calendar', 'messaging', 'payments', 'records', 'presence'];
 /** Powers: what each service lets Orbit do, and one tap to connect or disconnect. */
 export function PowersView() {
   const { t } = useI18n();
-  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
+  const { data, error, reload } = useLoad<{ type: string; group: string; available: boolean; onPlan: boolean; form: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' | 'exotel' | null; connection: { id: string; status: string; account: string | null; error: string | null; lastSyncAt: string | null } | null }[]>('/powers');
   const [form, setForm] = useState<string | null>(null);
   const { data: metaSetup } = useLoad<MetaSetup>('/channels/meta/setup');
   const [pagePick, setPagePick] = useState<{ selection: string; pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[]; want: 'messenger' | 'instagram' } | null>(null);
@@ -168,7 +169,7 @@ export function PowersView() {
                   <button className="btn small" disabled={busy === p.type} onClick={() => disconnect(p.connection!.id, p.type)}>{t('powers.disconnect')}</button>
                 ) : p.available ? (
                   p.onPlan ? (
-                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : p.form === 'sms' || p.form === 'razorpay' ? setForm(form === p.type ? null : p.type) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
+                    <button className="btn small primary" disabled={busy === p.type} onClick={() => (p.form === 'meta' ? (oneClick(p.type) ? connectMeta(p.type) : setForm(form === p.type ? null : p.type)) : p.form === 'sms' || p.form === 'razorpay' || p.form === 'exotel' ? setForm(form === p.type ? null : p.type) : connect(p.type))}>{p.connection?.status === 'error' ? t('powers.reconnect') : t('powers.connect')}</button>
                   ) : (
                     <span className="chip">{t('powers.upgrade')}</span>
                   )
@@ -184,6 +185,10 @@ export function PowersView() {
                 )}
                 {form === p.type && p.form === 'meta' && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {form === 'sms' && p.type === 'sms' && <SmsConnectForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
+                {p.type === 'phone' && p.connection?.status === 'connected' && form !== 'phone' && (
+                  <button className="link-btn small advanced" onClick={() => setForm('phone')}>{t('vox.open')}</button>
+                )}
+                {form === 'phone' && p.type === 'phone' && <VoxPanel onChange={reload} />}
                 {form === 'razorpay' && p.type === 'razorpay' && <RazorpayForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {pagePick && (pagePick.want === p.type) && (
                   <PagePicker pick={pagePick} allowMessenger={onPlan('messenger')} allowInstagram={onPlan('instagram')} onDone={() => { setPagePick(null); reload(); }} onCancel={() => setPagePick(null)} />

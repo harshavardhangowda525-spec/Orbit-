@@ -5,7 +5,7 @@ import type { Tx } from '../db/db.service';
 import { AppError, badRequest, notFound } from '../common/errors';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
-import { hashToken } from '../realtime/ws.gateway';
+import { hashToken } from '../realtime/hash';
 import { NudgeService } from '../nudge/nudge.service';
 import { logger } from '../logger';
 import { config } from '../config';

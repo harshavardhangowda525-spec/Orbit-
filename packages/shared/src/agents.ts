@@ -58,7 +58,7 @@ export const AGENTS: Record<AgentKey, AgentDef> = {
     displayName: 'Vox',
     roleKey: 'agent.vox.role',
     personality: 'friendly',
-    tools: ['get_customer', 'check_availability', 'create_booking', 'reschedule_booking', 'cancel_booking', 'transfer_call', 'take_message', 'log_call_outcome', 'request_task'],
+    tools: ['search_knowledge', 'send_service_info', 'get_customer', 'check_availability', 'create_booking', 'reschedule_booking', 'cancel_booking', 'create_lead', 'handover_to_human', 'request_task'],
     powers: ['phone', 'google_calendar', 'outlook_calendar'],
   },
   nudge: {

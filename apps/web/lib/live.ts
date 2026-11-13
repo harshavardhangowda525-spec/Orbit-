@@ -8,11 +8,14 @@ export interface LiveEvent {
   data?: any;
 }
 
-function wsUrl(query: string) {
+/** A WebSocket address on the API (path like "/ws" or "/voice/web"). */
+export function socketUrl(path: string, query: string) {
   // API_URL may be relative ("/api") when the API sits behind the same address as the web app.
-  if (apiUrl().startsWith('/')) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${apiUrl()}/ws?${query}`;
-  return `${apiUrl().replace(/^http/, 'ws')}/ws?${query}`;
+  if (apiUrl().startsWith('/')) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${apiUrl()}${path}?${query}`;
+  return `${apiUrl().replace(/^http/, 'ws')}${path}?${query}`;
 }
+
+const wsUrl = (query: string) => socketUrl('/ws', query);
 
 /**
  * Live updates over WebSocket, reconnecting with backoff (cheap phones drop

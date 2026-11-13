@@ -225,6 +225,25 @@ Each issued invoice is copied to Zoho with the same number and GST (Zoho's CGST+
 ## SMS (India, DLT)
 Each business connects its own MSG91 account from **Powers → SMS** (the form explains DLT registration). Nothing to set on the server. SMS is one-way (reminders and updates); replies come in on WhatsApp.
 
+## Phone calls with Vox (Exotel + Sarvam)
+Vox answers your business number, talks in English, Hindi or Kannada, books appointments and passes callers to your team when needed. Vox is on the **Business** plan.
+
+**Once for the server (Orbit's speech key):**
+1. Create an account at **dashboard.sarvam.ai** and make an **API key**.
+2. Render → **orbit-api** → **Environment** → add `SARVAM_API_KEY` = that key → **Save** (the API restarts).
+   Optional: `SARVAM_TTS_SPEAKER` to pick a different voice.
+
+**Each business (in Orbit → Powers → Business phone number → Connect):**
+1. Create an **Exotel** account and buy an **ExoPhone** (the number customers call).
+2. Exotel → **API settings**: copy the **Account SID**, **API key** and **API token**.
+3. Exotel → **App Bazaar** → create a flow: **Voicebot** applet first, then a **Connect** applet to your team's phone. Attach the flow to the ExoPhone.
+4. In Orbit, fill in the details and press **Connect**. Orbit shows a **Voicebot URL** (`wss://…/voice/exotel/…`): paste it into the Voicebot applet and save the flow.
+5. Optional: add the flow's **app ID** (the number in its App Bazaar address) so Vox can also make calls (e.g. **Call me** to test).
+
+Try it without a phone line: **Powers → Business phone number → Vox settings and test call → Start test call** talks to Vox in the browser (needs only `SARVAM_API_KEY`).
+If Vox cannot take a call (switched off, minutes used up), the stream ends straight away and Exotel moves on to the **Connect** applet, so callers always reach someone.
+Note: Render's free plan sleeps after 15 minutes without traffic; the first call after a sleep can fail. Use a paid instance for a real phone line.
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |

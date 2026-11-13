@@ -22,7 +22,7 @@ import { metaConfig } from '../channels/meta';
 import { msConfig } from '../channels/microsoft';
 import { zohoConfig } from '../ledger/zoho';
 
-export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' }[] = [
+export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | null; form?: 'meta' | 'microsoft' | 'sms' | 'razorpay' | 'zoho' | 'exotel' }[] = [
   { type: 'google_calendar', group: 'calendar', oauth: 'google' },
   { type: 'gmail', group: 'messaging', oauth: 'google' },
   { type: 'whatsapp', group: 'messaging', oauth: null, form: 'meta' },
@@ -30,7 +30,7 @@ export const POWER_CATALOGUE: { type: string; group: string; oauth: 'google' | n
   { type: 'messenger', group: 'messaging', oauth: null, form: 'meta' },
   { type: 'outlook', group: 'messaging', oauth: null, form: 'microsoft' },
   { type: 'sms', group: 'messaging', oauth: null, form: 'sms' },
-  { type: 'phone', group: 'messaging', oauth: null },
+  { type: 'phone', group: 'messaging', oauth: null, form: 'exotel' },
   { type: 'outlook_calendar', group: 'calendar', oauth: null },
   { type: 'razorpay', group: 'payments', oauth: null, form: 'razorpay' },
   { type: 'google_sheets', group: 'records', oauth: null },
@@ -112,7 +112,7 @@ export class PowersService implements OnModuleInit {
       return {
         type: p.type,
         group: p.group,
-        available: p.form === 'meta' ? metaConfig.ready : p.form === 'microsoft' ? msConfig.ready : p.form === 'zoho' ? zohoConfig.ready : p.form === 'sms' || p.form === 'razorpay' ? true : p.oauth !== null && google.googleConfigured(),
+        available: p.form === 'meta' ? metaConfig.ready : p.form === 'microsoft' ? msConfig.ready : p.form === 'zoho' ? zohoConfig.ready : p.form === 'sms' || p.form === 'razorpay' || p.form === 'exotel' ? true : p.oauth !== null && google.googleConfigured(),
         form: p.form ?? null,
         onPlan: planAllowsPower(plan!.features, p.type),
         connection: c ? { id: c.id, status: c.status, account: c.account_label, error: c.error, scopes: c.scopes, lastSyncAt: c.last_sync_at, settings: c.settings ?? {} } : null,

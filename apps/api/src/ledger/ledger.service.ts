@@ -15,7 +15,7 @@ import { AppError, badRequest, notFound } from '../common/errors';
 import { ZodPipe } from '../common/zod.pipe';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
-import { hashToken } from '../realtime/ws.gateway';
+import { hashToken } from '../realtime/hash';
 import { config, runtime } from '../config';
 import { logger } from '../logger';
 import { open, seal } from '../powers/crypto';

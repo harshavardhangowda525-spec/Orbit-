@@ -17,7 +17,9 @@ export interface LiveEvent {
     | 'conversation.updated'
     | 'notification.new'
     | 'booking.changed'
-    | 'invoice.updated';
+    | 'invoice.updated'
+    | 'call.started'
+    | 'call.ended';
   data?: unknown;
 }
 
