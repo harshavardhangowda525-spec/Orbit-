@@ -1,4 +1,5 @@
 import { GroqProvider, fromGroqChoice, groqModel, toGroqMessages, toGroqTools } from './groq.provider';
+import { pickGroqModel, resetGroqFallback } from './groq.provider';
 import { AiUnavailableError } from './provider';
 
 describe('Groq provider', () => {
@@ -38,7 +39,7 @@ describe('Groq provider', () => {
   it('picks the model from GROQ_MODEL, then a non-Claude AI_MODEL, then the default', () => {
     delete process.env.GROQ_MODEL;
     process.env.AI_MODEL = 'claude-opus-5-5';
-    expect(groqModel()).toBe('llama-3.3-70b-versatile');
+    expect(groqModel()).toBe('openai/gpt-oss-120b');
     process.env.AI_MODEL = 'openai/gpt-oss-120b';
     expect(groqModel()).toBe('openai/gpt-oss-120b');
     process.env.GROQ_MODEL = 'llama-3.1-8b-instant';
@@ -66,5 +67,26 @@ describe('Groq provider', () => {
     await expect(new GroqProvider().complete({ system: 'S', messages: [], tools: [] })).rejects.toThrow('Groq key missing or invalid');
     global.fetch = jest.fn(async () => new Response('{}', { status: 503 })) as any;
     await expect(new GroqProvider().complete({ system: 'S', messages: [], tools: [] })).rejects.toBeInstanceOf(AiUnavailableError);
+  });
+
+  it('when the model is retired, picks the best available one from Groq and keeps using it', async () => {
+    process.env.GROQ_API_KEY = 'gsk_test';
+    process.env.GROQ_MODEL = 'llama-3.3-70b-versatile';
+    resetGroqFallback();
+    const used: string[] = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      if (String(url).endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: 'whisper-large-v3' }, { id: 'llama-3.1-8b-instant' }, { id: 'openai/gpt-oss-120b' }] }), { status: 200 });
+      const model = JSON.parse(init.body).model;
+      used.push(model);
+      if (model === 'llama-3.3-70b-versatile') return new Response(JSON.stringify({ error: { message: 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', code: 'model_not_found' } }), { status: 404 });
+      return new Response(JSON.stringify({ model, choices: [{ finish_reason: 'stop', message: { content: 'Hello' } }], usage: {} }), { status: 200 });
+    }) as any;
+    const p = new GroqProvider();
+    expect((await p.complete({ system: 'S', messages: [{ role: 'user', content: 'hi' }], tools: [] })).model).toBe('openai/gpt-oss-120b');
+    await p.complete({ system: 'S', messages: [{ role: 'user', content: 'hi' }], tools: [] });
+    expect(used).toEqual(['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b']);
+    expect(pickGroqModel(['whisper-large-v3', 'llama-3.1-8b-instant'], 'x')).toBe('llama-3.1-8b-instant');
+    delete process.env.GROQ_MODEL;
+    resetGroqFallback();
   });
 });

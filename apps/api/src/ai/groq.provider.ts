@@ -1,13 +1,33 @@
+import { logger } from '../logger';
 import { AiUnavailableError, type AiBlock, type AiMessage, type AiProvider, type AiRequest, type AiResponse, type AiTool } from './provider';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-export const GROQ_DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
 /** Groq's model: GROQ_MODEL, else AI_MODEL unless that names a Claude model, else the default. */
 export function groqModel(): string {
   const ai = process.env.AI_MODEL ?? '';
   return process.env.GROQ_MODEL || (ai && !ai.startsWith('claude') ? ai : GROQ_DEFAULT_MODEL);
 }
+
+/** Preferred chat models with tool use, best first (Groq retires models; the list is matched against what the account has). */
+const PREFERRED = [/^openai\/gpt-oss-120b/, /llama-4-maverick/, /kimi-k2/, /llama-3\.3-70b/, /qwen3-32b/, /llama-4-scout/, /^openai\/gpt-oss-20b/, /qwen/, /llama-3\.1-8b/];
+const NOT_CHAT = /whisper|tts|guard|playai|orpheus|compound|allam|distil|embed/i;
+/** Model chosen after the configured one was refused; kept for the life of the process. */
+let fallbackModel: string | null = null;
+export const resetGroqFallback = () => (fallbackModel = null);
+
+/** Pick the best chat model the account can use from Groq's model list. */
+export function pickGroqModel(ids: string[], refused: string): string | null {
+  const usable = ids.filter((id) => id !== refused && !NOT_CHAT.test(id));
+  for (const re of PREFERRED) {
+    const hit = usable.find((id) => re.test(id));
+    if (hit) return hit;
+  }
+  return usable[0] ?? null;
+}
+
+const MODEL_GONE = /does not exist|decommissioned|model_not_found|not have access|no longer supported|deprecated/i;
 
 type OaMessage =
   | { role: 'system' | 'user'; content: string }
@@ -76,7 +96,22 @@ export class GroqProvider implements AiProvider {
   async complete(req: AiRequest): Promise<AiResponse> {
     const key = process.env.GROQ_API_KEY;
     if (!key) throw new AiUnavailableError('GROQ_API_KEY is not set');
-    const model = groqModel();
+    const configured = fallbackModel ?? groqModel();
+    try {
+      return await this.send(key, configured, req);
+    } catch (e) {
+      if (!(e instanceof ModelGone)) throw e;
+      // The model was retired or is not on this account: ask Groq what is available and use the best one.
+      const ids = await listModels(key);
+      const next = pickGroqModel(ids, configured);
+      if (!next) throw new AiUnavailableError(`Groq model ${configured} is not available and no other chat model was found`);
+      logger.warn(`Groq model ${configured} is not available; using ${next}. Set GROQ_MODEL to choose another.`, 'AI');
+      fallbackModel = next;
+      return this.send(key, next, req);
+    }
+  }
+
+  private async send(key: string, model: string, req: AiRequest): Promise<AiResponse> {
     const body: Record<string, unknown> = {
       model,
       messages: toGroqMessages(req.system, req.messages),
@@ -103,6 +138,7 @@ export class GroqProvider implements AiProvider {
       const msg = data?.error?.message ?? `HTTP ${res.status}`;
       if (res.status === 401 || res.status === 403) throw new AiUnavailableError('Groq key missing or invalid');
       if (res.status === 429 || res.status >= 500) throw new AiUnavailableError(`Groq unavailable: ${msg}`);
+      if ((res.status === 404 || res.status === 400) && (data?.error?.code === 'model_not_found' || data?.error?.code === 'model_decommissioned' || MODEL_GONE.test(msg))) throw new ModelGone(msg);
       // e.g. 400 tool_use_failed: the model wrote a broken tool call. Aria hands over instead of guessing.
       throw new AiUnavailableError(`Groq request failed: ${msg}`);
     }
@@ -113,5 +149,18 @@ export class GroqProvider implements AiProvider {
       model: data.model ?? model,
       usage: { input: data.usage?.prompt_tokens ?? 0, output: data.usage?.completion_tokens ?? 0, cacheRead: 0, cacheWrite: 0 },
     };
+  }
+}
+
+class ModelGone extends Error {}
+
+async function listModels(key: string): Promise<string[]> {
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/models', { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
+    const d: any = await res.json().catch(() => ({}));
+    if (!res.ok) return [];
+    return (d.data ?? []).filter((m: any) => m.active !== false).map((m: any) => String(m.id));
+  } catch {
+    return [];
   }
 }
