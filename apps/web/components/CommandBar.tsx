@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Sentence } from '@orbit/shared';
 import { apiStream, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
@@ -82,8 +82,21 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
     r.start();
   }
 
+  // Press "/" anywhere (outside a text field) to start typing to Orbit.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || el?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+      box.current?.querySelector('input')?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
-    <div className="cmd" data-testid="command-bar">
+    <div className="cmd" data-testid="command-bar" ref={box}>
       {asked && (
         <div className="reply" role="status" aria-live="polite" data-testid="orbit-reply">
           <div className="grow">
@@ -112,6 +125,7 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
           onChange={(e) => setText(e.target.value)}
           disabled={busy}
         />
+        {!text && <kbd className="cmd-kbd" aria-hidden title={t('cmd.shortcut')}>/</kbd>}
         {text.trim() ? (
           <button className="send" disabled={busy} aria-label={t('cmd.send')}>➤</button>
         ) : (

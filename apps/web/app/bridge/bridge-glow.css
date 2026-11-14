@@ -95,32 +95,103 @@
   .space-theme .earn:hover, .space-theme .briefing:hover { transform: translateY(-2px); box-shadow: var(--glass-edge), 0 22px 60px rgba(60, 45, 170, 0.45); }
 }
 
-/* ---------- Desktop: Today fits one screen; columns scroll on their own ---------- */
-@media (min-width: 1024px) and (min-height: 620px) {
-  .br.fit { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
-  .br.fit > .br-grid { flex: 1; min-height: 0; align-items: stretch; }
-  .br.fit .br-col {
-    min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-    padding: 6px 8px 16px; margin: -6px -8px 0;
-    scrollbar-width: thin; scrollbar-color: transparent transparent;
+/* ---------- The pivot: desktop dashboard ----------
+ * Key numbers across the top, the Crew orbit | today and decisions | the Crew feed,
+ * and Ask Orbit docked at the bottom of the screen. Only the feed scrolls.
+ */
+.kpi-strip { display: none; }
+.cmd-kbd { display: none; }
+
+@media (min-width: 1024px) {
+  /* Ask Orbit docked at the bottom of the screen, on every view. */
+  .space-theme .cmd {
+    position: fixed; left: 50%; right: auto; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    width: min(820px, calc(100vw - 64px)); max-width: none; margin: 0; z-index: 40;
   }
-  .br.fit .br-col:hover { scrollbar-color: rgba(255, 255, 255, 0.22) transparent; }
-  .br.fit .br-col::-webkit-scrollbar { width: 6px; }
-  .br.fit .br-col::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
-  .br.fit .br-col:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); }
-  /* The Crew card fills its column; the orbit shrinks on shorter screens. */
-  .br.fit .br-col > * { flex-shrink: 0; }
-  .br.fit .br-col:first-child > .hero-card { flex: 1 0 auto; display: flex; flex-direction: column; }
-  /* Spare height goes around the orbit rather than into one gap. */
-  .br.fit .hero-card .orbit { margin-top: auto; margin-bottom: auto; }
-  .br.fit .hero-card .ticker { margin-top: auto; }
-  .br.fit .orbit { width: min(320px, 100%, max(170px, calc(100dvh - 500px))); }
-  /* Ask Orbit stays at the bottom of the middle column while the cards above it scroll. */
-  .br.fit .br-col > .br-desktop-only:has(.cmd) { order: 99; position: sticky; bottom: 0; z-index: 5; margin-top: auto; padding-top: 8px; }
-  /* The feed fades out at the bottom edge instead of being cut. */
-  .br.fit .br-col:last-child { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); padding-bottom: 48px; }
-  .br.fit .br-head { margin-bottom: 18px; }
+  .space-theme .cmd form {
+    position: relative; isolation: isolate; padding: 7px 7px 7px 22px;
+    background: linear-gradient(145deg, rgba(46, 39, 120, 0.92), rgba(18, 16, 52, 0.95));
+    border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(169, 155, 255, 0.12);
+  }
+  /* A slow light travelling round the bar. */
+  .space-theme .cmd form::before {
+    content: ''; position: absolute; inset: -1.5px; border-radius: inherit; z-index: -1; padding: 1.5px;
+    background: conic-gradient(from var(--cmd-a, 0deg), rgba(169, 155, 255, 0) 0deg, rgba(169, 155, 255, 0.9) 50deg, rgba(94, 224, 181, 0.8) 90deg, rgba(169, 155, 255, 0) 150deg, rgba(169, 155, 255, 0) 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: cmd-orbit 7s linear infinite;
+  }
+  .space-theme .cmd input { font-size: 16px; min-height: 48px; }
+  .space-theme .cmd .reply { max-height: 52vh; overflow: auto; }
+  .cmd-kbd {
+    display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 8px; flex: none;
+    font: 700 13px ui-monospace, monospace; color: rgba(230, 227, 255, 0.7); border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.06);
+  }
+  .br { padding-bottom: 120px; }
+  .br-phone-cmd { margin-top: 0; }
 }
+@property --cmd-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes cmd-orbit { to { --cmd-a: 360deg; } }
+
+@media (min-width: 1024px) and (min-height: 620px) {
+  .br.fit { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 104px; }
+  .br.fit .br-head { margin-bottom: 14px; }
+  .br.fit > .br-grid.pivot {
+    flex: 1; min-height: 0; display: grid; gap: 18px;
+    grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.25fr) minmax(290px, 0.95fr);
+    grid-template-rows: auto minmax(0, 1fr); align-items: stretch;
+  }
+  /* Key numbers: one glass row across the full width. */
+  .br.fit .kpi-strip { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .br.fit .kpi-strip .kpi-tiles { display: contents; }
+  .br.fit .kpi-strip .tile { padding: 14px 16px; border-radius: 20px; display: flex; flex-direction: column; gap: 4px; justify-content: center; min-height: 78px; }
+  .br.fit .kpi-strip .tile b { font-size: 24px; }
+  .br.fit .kpi-strip .tile b small { font-size: 13px; font-weight: 700; opacity: 0.6; margin-left: 2px; }
+  .br.fit .kpi-strip .tile span { font-size: 12px; }
+  .space-theme .kpi-strip .tile.kpi-earn { --tile-glow: #ffe2a8; background: linear-gradient(150deg, rgba(255, 226, 168, 0.16), rgba(255, 255, 255, 0.05)); }
+  .space-theme .kpi-strip .tile.kpi-earn b { background: linear-gradient(100deg, #fff, #ffe2a8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .space-theme .kpi-strip .tile.kpi-hours { --tile-glow: #5ee0b5; }
+  .space-theme .kpi-strip .tile.kpi-pulse { --tile-glow: #a99bff; }
+
+  /* Columns hold still; only the Crew feed scrolls. */
+  .br.fit .br-col { min-height: 0; overflow: hidden; }
+  .br.fit .br-col > * { flex-shrink: 0; }
+  .br.fit .feed-col {
+    overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 56px 4px; margin-right: -8px;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 56px), transparent); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 56px), transparent);
+  }
+  .br.fit .feed-col::-webkit-scrollbar { width: 6px; }
+  .br.fit .feed-col::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 6px; }
+  .br.fit .feed-col .zone-head { position: sticky; top: 0; z-index: 2; margin: 0 0 10px; padding: 2px 2px 8px; background: linear-gradient(180deg, rgba(10, 9, 30, 0.85), rgba(10, 9, 30, 0)); }
+
+  /* The Crew: the orbit grows into the space, the live line sits at the bottom. */
+  .br.fit .hero-col > .hero-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .br.fit .hero-card .hero-tiles { display: none; }
+  .br.fit .hero-card .orbit { margin: auto; width: min(340px, 100%, max(170px, calc(100dvh - 470px))); }
+  .br.fit .hero-card .ticker { margin-top: 10px; }
+
+  /* Today and decisions: the briefing above, the current decision card filling the rest. */
+  .br.fit .mid-col { display: flex; flex-direction: column; gap: 16px; }
+  .br.fit .mid-col .briefing ul { font-size: 14px; }
+  .br.fit .mid-col > section[data-testid='needs-you'] { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .br.fit .mid-col .stack-wrap { flex: 1 1 auto; min-height: 0; }
+  .br.fit .mid-col .decision { max-height: 100%; overflow: hidden; }
+  .br.fit .mid-col .decision .preview { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .br.fit .mid-col .decision .situation { font-size: 19px; }
+  /* The earnings breakdown joins the middle column only when the screen is tall enough for it. */
+  .br.fit .mid-col { container-type: size; container-name: mid; }
+  .br.fit .mid-col .mid-earn { display: none; margin-top: auto; }
+  .br.fit .mid-col > section[data-testid='needs-you'] { flex: 0 1 auto; }
+}
+@container mid (min-height: 560px) {
+  .br.fit .mid-col .mid-earn { display: flex; }
+}
+/* Phones and tablets: the earnings card sits in the page as before. */
+@media (max-width: 1023px), (max-height: 619px) {
+  .mid-earn { display: flex; }
+}
+
+@media (prefers-reduced-motion: reduce) { .space-theme .cmd form::before { animation: none; } }
 
 @media (max-width: 480px) { .br-head h1 { font-size: 19px; line-height: 1.2; } }
 

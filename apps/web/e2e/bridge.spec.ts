@@ -64,7 +64,7 @@ test('new activity arrives live over WebSocket without reloading', async ({ page
   await expect(page.getByTestId('feed')).toContainText('Live was booked for Haircut', { timeout: 5000 });
 });
 
-test('desktop shows three columns with tiles inside the hero', async ({ browser }) => {
+test('desktop: key numbers on top, three columns, Ask Orbit docked at the bottom, only the Crew feed scrolls', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-IN', timezoneId: 'Asia/Kolkata' });
   const page = await ctx.newPage();
   await signIn(page, SEED.salon);
@@ -74,8 +74,27 @@ test('desktop shows three columns with tiles inside the hero', async ({ browser 
   const feed = await page.getByTestId('feed').boundingBox();
   expect(hero!.x).toBeLessThan(needs!.x);
   expect(needs!.x).toBeLessThan(feed!.x);
-  await expect(page.locator('.hero-tiles [data-testid="tile-need-you"]')).toBeVisible();
+  // The day's key numbers sit in one row above the columns.
+  const kpi = page.getByTestId('kpi-strip');
+  await expect(kpi.getByTestId('tile-need-you')).toBeVisible();
+  await expect(kpi.getByTestId('kpi-earned')).toBeVisible();
+  expect((await kpi.boundingBox())!.y).toBeLessThan(hero!.y);
   await expect(page.locator('.tiles.phone')).toBeHidden();
+  // Ask Orbit is docked at the bottom of the screen.
+  const bar = (await page.getByTestId('command-bar').boundingBox())!;
+  expect(bar.y + bar.height).toBeGreaterThan(900 - 40);
+  // The page itself does not scroll; the Crew feed does.
+  const sizes = await page.evaluate(() => {
+    const feed = document.querySelector('.feed-col') as HTMLElement;
+    return { page: document.documentElement.scrollHeight, feedScroll: feed.scrollHeight > feed.clientHeight, feedOverflow: getComputedStyle(feed).overflowY, mid: getComputedStyle(document.querySelector('.mid-col')!).overflowY };
+  });
+  expect(sizes.page).toBeLessThanOrEqual(900);
+  expect(sizes.feedOverflow).toBe('auto');
+  expect(sizes.feedScroll).toBe(true);
+  expect(sizes.mid).toBe('hidden');
+  // "/" jumps to the bar.
+  await page.keyboard.press('/');
+  await expect(page.getByTestId('command-bar').locator('input')).toBeFocused();
   await ctx.close();
 });
 

@@ -9,7 +9,7 @@ import { api, ApiError, session } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { useLive, ownerLiveQuery } from '@/lib/live';
-import { useIntroOnce, usePageVisible } from '@/lib/motion';
+import { useCountUp, useIntroOnce, usePageVisible } from '@/lib/motion';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
 import { MoneyView } from '@/components/MoneyView';
@@ -253,8 +253,13 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
     </section>
   );
   return (
-    <div className="br-grid">
-      <div className="br-col">
+    <div className="br-grid pivot">
+      {/* Desktop: one row of the day's key numbers across the top. */}
+      <div className="kpi-strip br-desktop-only rise" style={{ ['--d' as any]: '0.04s' }} data-testid="kpi-strip">
+        {tiles('kpi-tiles')}
+        <KpiExtra earned={data.earnings.total} minutes={data.earnings.minutesSaved} score={data.pulse.score} currency={data.business.currency} byAgent={data.earnings.byAgent} animate={intro} />
+      </div>
+      <div className="br-col hero-col">
         <section className="hero-card rise" style={{ ['--d' as any]: '0.08s' }} data-testid="pulse">
           <div className="hero-top">
             <span className="label">{t('hero.working')}</span>
@@ -276,18 +281,44 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         </section>
         {tiles('tiles phone')}
       </div>
-      <div className="br-col">
+      <div className="br-col mid-col">
         {data.mode === 'morning' && briefing}
         {data.mode === 'evening' && briefing}
         <NeedsYou cards={data.needsYou} onDecided={reload} onOpen={onOpen} dayName={dayName} />
-        <div className="br-desktop-only" style={{ flexDirection: 'column' }}><CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} /></div>
-        <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
+        <div className="mid-earn" style={{ flexDirection: 'column' }}>
+          <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
+        </div>
       </div>
-      <div className="br-col">
+      <div className="br-col feed-col">
         <CrewFeed groups={data.feed} names={names} animate={intro} onOpen={openEntity} />
       </div>
-      <div className="br-phone-only"><CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} /></div>
+      {/* Ask Orbit: docked at the bottom of the screen on every size. */}
+      <CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} />
     </div>
+  );
+}
+
+/** The rest of the desktop key-numbers row: Orbit's earnings this month, hours saved, and the Pulse. */
+function KpiExtra({ earned, minutes, score, currency, byAgent, animate }: { earned: number; minutes: number; score: number; currency: string; byAgent: { name: string; value: number }[]; animate: boolean }) {
+  const { t, money } = useI18n();
+  const e = useCountUp(earned, animate);
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  const top = byAgent.slice(0, 3).map((r) => `${r.name} ${money(r.value, currency)}`).join(' · ');
+  return (
+    <>
+      <div className="tile kpi-earn" title={top} data-testid="kpi-earned">
+        <b>{money(Math.round(e), currency)}</b>
+        <span>{t('kpi.earned_month')}</span>
+      </div>
+      <div className="tile kpi-hours">
+        <b>{t('kpi.hours', { count: hours })}</b>
+        <span>{t('kpi.hours_saved')}</span>
+      </div>
+      <div className="tile kpi-pulse">
+        <b>{score}<small>/100</small></b>
+        <span>{t('kpi.pulse')}</span>
+      </div>
+    </>
   );
 }
 
