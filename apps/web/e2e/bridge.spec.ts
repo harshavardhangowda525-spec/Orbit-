@@ -35,11 +35,16 @@ test('The Bridge renders seeded data on a mid-range phone in under 2 seconds', a
   await expect(page.locator('.tiles.phone [data-testid="tile-need-you"]')).toContainText('1');
 
   // Language switch re-renders everything.
-  await page.getByLabel('Language').first().selectOption('kn');
+  // On a phone the language picker lives in the "More" sheet of the tab bar.
+  await page.getByTestId('tab-bar').locator('[data-nav="more"]').click();
+  const sheet = page.locator('.more-sheet');
+  await sheet.getByLabel('Language').selectOption('kn');
   await expect(page.getByText('ನಿಮ್ಮ ಅಗತ್ಯವಿದೆ')).toBeVisible();
-  await page.getByLabel('ಭಾಷೆ').first().selectOption('hi');
+  await sheet.getByLabel('ಭಾಷೆ').selectOption('hi');
   await expect(page.getByText('आपकी ज़रूरत है')).toBeVisible();
-  await page.getByLabel('भाषा').first().selectOption('en');
+  await sheet.getByLabel('भाषा').selectOption('en');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
 
   // Tapping an agent in the orbit opens it in the Crew view.
   // Agents keep orbiting (never "stable" for Playwright), so tap without waiting for stillness.

@@ -10,7 +10,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { useLive, ownerLiveQuery } from '@/lib/live';
 import { useCountUp, useIntroOnce, usePageVisible } from '@/lib/motion';
-import { LanguagePicker } from '@/components/LanguagePicker';
+import { AppNav } from '@/components/AppNav';
 import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
 import { MoneyView } from '@/components/MoneyView';
 import { PlanView } from '@/components/PlanCrew';
@@ -106,27 +106,23 @@ function Bridge() {
   const names = Object.fromEntries((data?.crew ?? []).map((c) => [c.agent, c.name]));
   const dayName = data ? new Intl.DateTimeFormat(lang === 'en' ? 'en-IN' : `${lang}-IN`, { weekday: 'long', timeZone: data.business.timezone }).format(new Date(data.now)) : '';
   const greetingKey = data ? `greet.${data.dayPart}` : 'greet.morning';
-  const switcher = (
-    <nav className="switcher" aria-label={t('bridge.views')}>
-      {VIEWS.map((v) => (
-        <button key={v} aria-current={view === v} onClick={() => setView(v)}>{t(`view.${v}`)}</button>
-      ))}
-    </nav>
-  );
+  const selectView = (v: View) => {
+    setView(v);
+    window.history.replaceState(null, '', v === 'today' ? '/bridge' : `/bridge?view=${v}`);
+  };
 
   return (
-    <main className={`br space-theme ${view === 'today' && data ? 'fit' : ''} ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <main className={`br has-nav space-theme ${view === 'today' && data ? 'fit' : ''} ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <SpaceBackdrop variant="app" />
+      <AppNav active={view} onSelect={selectView} business={data?.business.name ?? business?.name ?? ''} badges={{ today: data?.needsYou.length ?? 0, inbox: data?.pulse.numbers.peopleWaiting ?? 0 }} />
       <Header
         dayName={dayName}
         business={data?.business.name ?? business?.name ?? ''}
         greeting={data ? t(greetingKey, { name: data.owner.firstName ?? '' }).replace(/,\s*$/, '') : ''}
-        switcher={switcher}
         isAdmin={!!me?.user.isPlatformAdmin && !me.impersonation}
         signOut={signOut}
         ready={!!data}
       />
-      <div className="br-switch-phone">{switcher}</div>
       <MaintenanceBanner />
       {me?.impersonation && (
         <p className="note small row between">
@@ -166,7 +162,7 @@ function Bridge() {
   );
 }
 
-function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready }: { dayName: string; business: string; greeting: string; switcher: React.ReactNode; isAdmin: boolean; signOut: () => void; ready: boolean }) {
+function Header({ dayName, business, greeting, isAdmin, signOut, ready }: { dayName: string; business: string; greeting: string; isAdmin: boolean; signOut: () => void; ready: boolean }) {
   const { t, ts } = useI18n();
   const [notes, setNotes] = useState<{ unread: number; items: { id: string; title: Sentence; link: string | null; at: string; readAt: string | null }[] } | null>(null);
   const [open, setOpen] = useState(false);
@@ -199,8 +195,6 @@ function Header({ dayName, business, greeting, switcher, isAdmin, signOut, ready
         <div className="date">{dayName}{business ? ` · ${business}` : ''}</div>
         <h1 data-testid="greeting">{greeting || ' '}</h1>
       </div>
-      <div className="br-desktop-only">{switcher}</div>
-      <LanguagePicker compact />
       <div className="bell-area" ref={bellArea}>
       <button className="bell" aria-label={t('bridge.notifications', { count: notes?.unread ?? 0 })} aria-expanded={open}
         onClick={() => {
