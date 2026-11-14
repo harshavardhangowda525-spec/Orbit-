@@ -51,8 +51,10 @@ export class UsageService implements OnModuleInit {
   }
 
   private async plan(tx: Tx) {
-    return tx.one<{ limits: PlanLimits; timezone: string; name: string; wallet: string }>(
-      `SELECT p.limits, b.timezone, b.name, b.ai_wallet_balance AS wallet FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`,
+    // Custom limits an admin set for this business override the plan's.
+    return tx.one<{ limits: PlanLimits; timezone: string; name: string; wallet: string; ai_paused: boolean }>(
+      `SELECT p.limits || COALESCE(b.limit_overrides, '{}') AS limits, b.timezone, b.name, b.ai_wallet_balance AS wallet, b.ai_paused
+       FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`,
     );
   }
 
@@ -93,6 +95,8 @@ export class UsageService implements OnModuleInit {
   async check(tx: Tx, conversationId: string, now = new Date()): Promise<Allowance> {
     const p = await this.plan(tx);
     if (!p) return { allowed: true };
+    // Paused by the admin team (or the abnormal-cost watch): every chat goes to the owner, politely.
+    if (p.ai_paused) return { allowed: false, scope: 'day' };
     const w = await this.window(tx, p.timezone, now);
     const c = await this.counts(tx, w, conversationId);
     const dayCap = dailyAiCap(p.limits);
@@ -207,6 +211,10 @@ export class UsageService implements OnModuleInit {
     const p = await this.plan(tx);
     if (!p) return null;
     const w = await this.window(tx, p.timezone, now);
+    if (p.ai_paused) {
+      const waiting = await tx.one<{ n: number }>(`SELECT count(*)::int AS n FROM conversations WHERE parked_for_limit_at IS NOT NULL AND status = 'waiting_staff'`);
+      return { scope: 'day', waiting: waiting?.n ?? 0, resetsAt: w.nextDay };
+    }
     const c = await this.counts(tx, w, null);
     const dayCap = dailyAiCap(p.limits);
     const monthCap = p.limits.aiConversationsPerMonth;

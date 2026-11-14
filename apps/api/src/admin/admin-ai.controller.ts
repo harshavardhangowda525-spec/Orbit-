@@ -2,7 +2,7 @@ import { Body, Controller, Get, Put, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AI_TASK_TYPES, AI_TIERS, resolveRouting } from '@orbit/shared';
 import { DbService, type Tx } from '../db/db.service';
-import { AdminGuard, ClientIp, CurrentUser } from '../auth/guards';
+import { AdminGuard, AdminRoles, ClientIp, CurrentUser } from '../auth/guards';
 import type { AuthUser } from '../auth/types';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
@@ -72,6 +72,7 @@ export class AdminAiController {
     }));
   }
 
+  @AdminRoles('finance')
   @Put('budget')
   async putBudget(@CurrentUser() u: AuthUser, @Body(new ZodPipe(BudgetPut)) body: z.infer<typeof BudgetPut>, @ClientIp() ip: string) {
     return this.db.adminTx(async (tx) => {

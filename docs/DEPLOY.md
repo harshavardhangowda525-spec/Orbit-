@@ -257,6 +257,15 @@ Bookings then appear in the calendar (with WhatsApp confirmations), messages as 
 - Free: a daily allowance (default 20 conversations, resets at midnight in the business's timezone). Paid: a monthly allowance plus a daily cap of 3× the daily share. Chats already under way get up to 10 more replies; new ones get one polite note and wait in the inbox, the owner is told, and Orbit offers to reply when the allowance is back.
 - Margins: revenue comes from Razorpay subscription charges; AI budget = net revenue × the set % (default 25%).
 
+## Admin control centre
+- Open **/admin** after signing in. The first time, scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…) and enter the 6-digit code; after that, enter a code each time you open the admin centre (sessions last 8 hours, this browser tab only).
+- People in `PLATFORM_ADMIN_EMAILS` start as **Owner**. Add the rest of the team in **Admin → Team** (they must have signed up first) as Owner, Finance, Support or Viewer.
+- Lost your phone? Another Owner can **Reset 2FA** in Team. If you are the only Owner, run in Supabase SQL: `UPDATE admin_users SET totp_secret = NULL, totp_enabled_at = NULL WHERE user_id = (SELECT id FROM users WHERE email = 'you@example.com');`
+- Email to business owners and admin alerts: set `EMAIL_API_KEY` (a Resend API key) and `EMAIL_FROM` (e.g. `Orbit <hello@yourdomain>`, on a domain verified in Resend), plus `API_PUBLIC_URL` (e.g. `https://orbit-api-xxxx.onrender.com`) for open/click tracking. Without them, messages still appear in the app.
+- WhatsApp and push messages to owners arrive with the Orbit Assistant number (later phase); until then those channels show as "not available".
+- Failed plan payments keep the plan for `billing.grace_days` (default 7) with reminders, then move the business to Free. Data is never deleted.
+- The audit log is append-only at the database level.
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |

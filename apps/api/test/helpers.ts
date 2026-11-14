@@ -113,3 +113,28 @@ export async function upgrade(app: NestExpressApplication, businessIds: string |
     });
   }
 }
+
+/** Admin centre: sign in as a platform admin, set up the authenticator (reset first) and confirm a code. */
+export async function adminApi(app: NestExpressApplication, email = SEED.admin) {
+  const { codeAt, stepAt } = require('../src/admin/totp');
+  const { DbService } = require('../src/db/db.service');
+  const s = app.getHttpServer();
+  const who = await signIn(app, email);
+  await app.get(DbService).adminTx((tx: any) => tx.q(`UPDATE admin_users SET totp_secret = NULL, totp_enabled_at = NULL, last_totp_step = NULL WHERE user_id = $1`, [who.userId]));
+  const start = await request(s).post('/admin-auth/start').set('authorization', `Bearer ${who.token}`).send({}).expect(201);
+  const v = await request(s).post('/admin-auth/verify').set('authorization', `Bearer ${who.token}`).send({ code: codeAt(start.body.secret, stepAt()) }).expect(201);
+  return withAdmin(app, who.token, v.body.token, who.userId);
+}
+
+function withAdmin(app: NestExpressApplication, token: string, adminToken: string, userId: string) {
+  const s = app.getHttpServer();
+  const h = (r: request.Test) => r.set('authorization', `Bearer ${token}`).set('x-admin-session', adminToken);
+  return {
+    token, adminToken, userId,
+    get: (u: string) => h(request(s).get(u)),
+    post: (u: string, b: object = {}) => h(request(s).post(u)).send(b),
+    put: (u: string, b: object = {}) => h(request(s).put(u)).send(b),
+    patch: (u: string, b: object = {}) => h(request(s).patch(u)).send(b),
+    delete: (u: string) => h(request(s).delete(u)),
+  };
+}

@@ -66,6 +66,14 @@ services:
         sync: false
       - key: MICROSOFT_REDIRECT_URI
         sync: false
+      # Messages from Orbit to business owners and admin alerts by email (Resend API key).
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # The API's own public address (email open/click tracking links).
+      - key: API_PUBLIC_URL
+        sync: false
       # Vox phone calls: Sarvam speech key (docs/DEPLOY.md).
       - key: SARVAM_API_KEY
         sync: false

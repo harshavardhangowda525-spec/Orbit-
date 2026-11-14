@@ -15,6 +15,27 @@ export class ApiError extends Error {
 }
 
 const TOKEN = 'orbit.token';
+const ADMIN = 'orbit.adminSession';
+
+/** Admin centre session (after the authenticator code): this browser tab only, 8 hours. */
+export const adminSession = {
+  get: (): string | null => {
+    try {
+      const raw = sessionStorage.getItem(ADMIN);
+      if (!raw) return null;
+      const { token, until } = JSON.parse(raw);
+      return until > Date.now() ? token : null;
+    } catch {
+      return null;
+    }
+  },
+  set: (token: string | null, seconds = 8 * 3600) => {
+    try {
+      if (token) sessionStorage.setItem(ADMIN, JSON.stringify({ token, until: Date.now() + seconds * 1000 - 60_000 }));
+      else sessionStorage.removeItem(ADMIN);
+    } catch {}
+  },
+};
 const BUSINESS = 'orbit.business';
 
 function read(key: string): string | null {
@@ -68,13 +89,15 @@ export function sessionEnded() {
 }
 
 /** Call the Orbit API. Errors come back as ApiError with a plain-language message. */
-async function authHeaders(business = true): Promise<Record<string, string>> {
+async function authHeaders(business = true, path = ''): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (getSupabase()) await freshToken();
   const token = session.token();
   if (token) headers.authorization = `Bearer ${token}`;
   const biz = session.businessId();
   if (business && biz) headers['x-business-id'] = biz;
+  const adm = path.startsWith('/admin') ? adminSession.get() : null;
+  if (adm) headers['x-admin-session'] = adm;
   return headers;
 }
 
@@ -112,7 +135,7 @@ export async function apiStream(path: string, body: unknown, onEvent: (e: any) =
 }
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}, retried = false): Promise<T> {
-  const headers = await authHeaders(opts.business !== false);
+  const headers = await authHeaders(opts.business !== false, path);
   let res: Response;
   try {
     res = await fetch(`${apiUrl()}${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -131,4 +154,20 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.');
   }
   return data as T;
+}
+
+/** Download a file from the API (CSV/JSON exports) with the sign-in and admin session. */
+export async function apiDownload(path: string, filename: string) {
+  const headers = await authHeaders(false, path);
+  const res = await fetch(`${apiUrl()}${path}`, { headers });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, d?.error?.code ?? 'error', d?.error?.message ?? 'Download failed.');
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }

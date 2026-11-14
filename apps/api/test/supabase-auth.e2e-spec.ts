@@ -1,3 +1,5 @@
+import { DbService } from '../src/db/db.service';
+import { codeAt, stepAt } from '../src/admin/totp';
 /**
  * Supabase Auth sign-in: the API accepts access tokens issued by this project's
  * Supabase Auth (verified against its JWKS, or the legacy HS256 secret), links
@@ -107,8 +109,14 @@ describe('sign-in with Supabase Auth', () => {
     expect((await http().post('/auth/signup').send({ email: 'someone@example.com', password: 'whatever-123' })).status).toBe(404);
     expect((await http().post('/auth/google').send({ idToken: 'abcdefghijk' })).status).toBe(404);
     const admin = await token({ sub: '00000000-0000-4000-8000-000000000006', email: 'admin@orbit.test', user_metadata: { email_verified: true } });
-    const owned = await http().get('/admin/businesses').set('authorization', `Bearer ${admin}`).expect(200);
-    const imp = await http().post(`/admin/businesses/${owned.body[0].id}/impersonate`).set('authorization', `Bearer ${admin}`).expect(201);
+    // The admin centre also needs the authenticator code (set up on first use).
+    await http().get('/admin/businesses').set('authorization', `Bearer ${admin}`).expect(401);
+    const me = (await http().get('/auth/me').set('authorization', `Bearer ${admin}`).expect(200)).body.user.id;
+    await app.get(DbService).adminTx((tx: any) => tx.q(`UPDATE admin_users SET totp_secret = NULL, totp_enabled_at = NULL, last_totp_step = NULL WHERE user_id = $1`, [me]));
+    const start = await http().post('/admin-auth/start').set('authorization', `Bearer ${admin}`).send({}).expect(201);
+    const v = await http().post('/admin-auth/verify').set('authorization', `Bearer ${admin}`).send({ code: codeAt(start.body.secret, stepAt()) }).expect(201);
+    const owned = await http().get('/admin/businesses').set('authorization', `Bearer ${admin}`).set('x-admin-session', v.body.token).expect(200);
+    const imp = await http().post(`/admin/businesses/${owned.body[0].id}/impersonate`).set('authorization', `Bearer ${admin}`).set('x-admin-session', v.body.token).expect(201);
     await api(app, imp.body.token, owned.body[0].id).get('/bridge').expect(200);
   });
 });

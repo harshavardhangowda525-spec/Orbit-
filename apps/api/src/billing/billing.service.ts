@@ -16,6 +16,8 @@ import { syncCrewToPlan } from './crew-plan';
 import { UsageService } from './usage.service';
 import { AiService } from '../ai/ai.service';
 import { JobsService } from '../jobs/jobs.service';
+import { AdminOpsService } from '../admin/admin-ops.service';
+import { MessagingService } from '../admin/messaging.service';
 
 /** Orbit's own Razorpay account (Orbit charging businesses for their plan). */
 const billingKeys = () => ({ keyId: process.env.ORBIT_RAZORPAY_KEY_ID ?? '', keySecret: process.env.ORBIT_RAZORPAY_KEY_SECRET ?? '', webhookSecret: process.env.ORBIT_RAZORPAY_WEBHOOK_SECRET ?? '' });
@@ -44,7 +46,7 @@ const ACTIVE = ['authenticated', 'active', 'pending'];
  */
 @Injectable()
 export class BillingService {
-  constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly usageSvc: UsageService, private readonly ai: AiService, private readonly jobs: JobsService) {}
+  constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly usageSvc: UsageService, private readonly ai: AiService, private readonly jobs: JobsService, private readonly ops: AdminOpsService, private readonly messaging: MessagingService) {}
 
   async overview(t: Tenant) {
     return this.db.withTenant(t.businessId, async (tx) => {
@@ -69,10 +71,33 @@ export class BillingService {
   }
 
   /** Ensures a Razorpay plan exists for this Orbit plan's current INR price. */
-  private async providerPlan(code: string) {
+  /**
+   * The monthly price this business pays for a plan: a founding-customer price lock
+   * wins; otherwise the plan's price less any coupon applied to the business.
+   */
+  async priceFor(businessId: string, code: string): Promise<{ inr: number; coupon: string | null }> {
+    const r = await this.db.adminTx((tx) =>
+      tx.one(
+        `SELECT p.prices, b.price_lock, b.applied_coupon, c.kind, c.value, c.eligible_plans, c.active AS c_active, c.valid_from, c.valid_to, c.max_uses, c.used
+         FROM plans p, businesses b LEFT JOIN coupons c ON c.code = b.applied_coupon WHERE p.code = $1 AND b.id = $2`,
+        [code, businessId],
+      ),
+    );
+    const list = Number(r?.prices?.INR ?? 0);
+    const lock = r?.price_lock;
+    if (lock?.plan === code && lock.INR != null && (!lock.until || new Date(lock.until) > new Date())) return { inr: Number(lock.INR), coupon: null };
+    const now = Date.now();
+    const couponOk = r?.applied_coupon && r.c_active && (!r.valid_from || new Date(r.valid_from).getTime() <= now) && (!r.valid_to || new Date(r.valid_to).getTime() > now)
+      && (r.max_uses == null || r.used < r.max_uses) && (!r.eligible_plans?.length || r.eligible_plans.includes(code));
+    if (!couponOk) return { inr: list, coupon: null };
+    const off = r.kind === 'percent' ? (list * Number(r.value)) / 100 : Number(r.value);
+    return { inr: Math.max(1, Math.round(list - off)), coupon: r.applied_coupon };
+  }
+
+  private async providerPlan(code: string, businessId?: string) {
     const p = await this.db.one(`SELECT id, code, name, prices, provider_refs FROM plans WHERE code = $1 AND active`, [code]);
     if (!p) throw notFound('That plan does not exist.');
-    const inr = Number(p.prices?.INR ?? 0);
+    const inr = businessId ? (await this.priceFor(businessId, code)).inr : Number(p.prices?.INR ?? 0);
     if (inr <= 0) throw badRequest('free_plan', 'The Free plan needs no payment.');
     const key = `razorpay:INR:${inr}`;
     if (p.provider_refs?.[key]) return { plan: p, providerPlanId: p.provider_refs[key] as string };
@@ -87,7 +112,7 @@ export class BillingService {
     if (!billingReady()) throw badRequest('billing_not_configured', 'Online payment for plans is not set up yet. Please ask the Orbit team to change your plan.');
     const custom = await this.db.one(`SELECT 1 FROM plans WHERE code = $1 AND (features->>'customPricing')::boolean`, [b.data.plan]);
     if (custom) throw badRequest('contact_sales', 'This plan is arranged with the Orbit team. Please contact us.');
-    const { plan, providerPlanId } = await this.providerPlan(b.data.plan);
+    const { plan, providerPlanId } = await this.providerPlan(b.data.plan, t.businessId);
     const s = await rzp('/subscriptions', { plan_id: providerPlanId, total_count: 120, quantity: 1, customer_notify: 1, notes: { business_id: t.businessId, plan_code: plan.code } });
     await this.db.withTenant(t.businessId, (tx) =>
       tx.q(`INSERT INTO subscriptions (plan_code, provider_subscription_id, status, short_url, created_by) VALUES ($1, $2, $3, $4, $5)`, [plan.code, s.id, s.status ?? 'created', s.short_url, t.userId]),
@@ -131,9 +156,31 @@ export class BillingService {
         );
       }
       if (['subscription.activated', 'subscription.charged', 'subscription.resumed'].includes(event) && status === 'active') {
-        const before = await tx.one(`SELECT plan_id FROM businesses WHERE id = app_current_business()`);
+        const before = await tx.one(`SELECT b.plan_id, p.code, p.sort_order FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`);
         const changed = await tx.one(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = $1) WHERE id = app_current_business() AND plan_id <> (SELECT id FROM plans WHERE code = $1) RETURNING id, plan_id`, [sub.plan_code]);
         if (changed) await syncCrewToPlan(tx, businessId, before?.plan_id ?? null, changed.plan_id);
+        await this.ops.paymentRecovered(tx);
+        // The admin feed: upgrade / downgrade on a plan change, renewal on a later charge.
+        const amount = event === 'subscription.charged' && pay?.amount ? Number(pay.amount) / 100 : null;
+        const target = await tx.one(`SELECT sort_order, name FROM plans WHERE code = $1`, [sub.plan_code]);
+        if (changed) await this.ops.planEvent(tx, { kind: Number(target?.sort_order) >= Number(before?.sort_order ?? 0) ? 'upgrade' : 'downgrade', from: before?.code, to: sub.plan_code, amount, status: 'active' });
+        else if (amount) await this.ops.planEvent(tx, { kind: 'renewal', from: sub.plan_code, to: sub.plan_code, amount, status: 'paid' });
+        if (changed && Number(target?.sort_order) > Number(before?.sort_order ?? 0)) {
+          const added = await tx.one(
+            `SELECT array_to_string(ARRAY(SELECT jsonb_array_elements_text(n.features->'agents') EXCEPT SELECT jsonb_array_elements_text(o.features->'agents')), ', ') AS agents
+             FROM plans n, plans o WHERE n.code = $1 AND o.code = $2`,
+            [sub.plan_code, before?.code ?? 'free'],
+          );
+          const fresh = String(added?.agents ?? '').split(', ').filter((a) => a && a !== 'orbit').map((a) => a[0].toUpperCase() + a.slice(1));
+          tx.afterCommit(() => this.messaging.sendTemplate(businessId, 'welcome_upgrade', { plan: target?.name ?? sub.plan_code, new: [...fresh, 'a bigger AI allowance'].join(', ') }, { dedupe: `welcome:${sub.id}`, link: '/bridge' }).catch(() => undefined));
+          // A coupon applied to this checkout counts as used.
+          const coupon = await tx.one(`SELECT applied_coupon FROM businesses WHERE id = app_current_business() AND applied_coupon IS NOT NULL`);
+          if (coupon) {
+            await tx.q(`INSERT INTO coupon_redemptions (coupon_code, business_id, plan_code) VALUES ($1, app_current_business(), $2) ON CONFLICT DO NOTHING`, [coupon.applied_coupon, sub.plan_code]);
+            await tx.q(`UPDATE coupons SET used = used + 1 WHERE code = $1`, [coupon.applied_coupon]);
+            await tx.q(`UPDATE businesses SET applied_coupon = NULL WHERE id = app_current_business()`);
+          }
+        }
         // Moving between paid plans: the older subscription stops now.
         const older = await tx.q(`SELECT provider_subscription_id FROM subscriptions WHERE id <> $1 AND status = ANY($2)`, [sub.id, ACTIVE]);
         for (const o of older) {
@@ -149,15 +196,18 @@ export class BillingService {
           });
         }
       }
-      if (['subscription.halted', 'subscription.cancelled', 'subscription.completed'].includes(event)) {
-        const otherActive = await tx.one(`SELECT 1 FROM subscriptions WHERE id <> $1 AND status = 'active'`, [sub.id]);
-        if (!otherActive) {
-          const before = await tx.one(`SELECT plan_id FROM businesses WHERE id = app_current_business()`);
-          const free = await tx.one(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'free') WHERE id = app_current_business() RETURNING plan_id`);
-          await syncCrewToPlan(tx, businessId, before?.plan_id ?? null, free.plan_id);
-          await tx.q(`INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'plan_ended', $1, '/bridge?view=plan')`, [JSON.stringify({ key: event === 'subscription.halted' ? 'notify.plan_payment_failed' : 'notify.plan_ended' })]);
-          liveToBusiness(tx, { type: 'notification.new' });
-        }
+      const otherActive = await tx.one(`SELECT 1 FROM subscriptions WHERE id <> $1 AND status = 'active'`, [sub.id]);
+      // A failed payment (Razorpay retrying, or given up): the plan stays on through the grace period, then moves to Free.
+      if (['subscription.pending', 'subscription.halted'].includes(event) && !otherActive) {
+        await this.ops.paymentFailed(tx, businessId, sub.plan_code);
+        await tx.q(`INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'plan_ended', $1, '/bridge?view=plan')`, [JSON.stringify({ key: 'notify.plan_payment_failed' })]);
+        liveToBusiness(tx, { type: 'notification.new' });
+      }
+      // Cancelled by the owner (at the end of the paid month) or finished: Free now.
+      if (['subscription.cancelled', 'subscription.completed'].includes(event) && !otherActive) {
+        tx.afterCommit(() => this.ops.moveToFree(businessId, 'cancel').catch((e) => logger.error(`move to Free failed: ${e.message}`, e.stack, 'Billing')));
+        await tx.q(`INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'plan_ended', $1, '/bridge?view=plan')`, [JSON.stringify({ key: 'notify.plan_ended' })]);
+        liveToBusiness(tx, { type: 'notification.new' });
       }
       return { ok: true };
     });

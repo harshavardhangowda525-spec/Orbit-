@@ -1,3 +1,4 @@
+import { AdminOpsService } from '../src/admin/admin-ops.service';
 /**
  * Crew settings (switches and permissions), plan limits, renewals, review link,
  * and Orbit's own subscription billing (Razorpay mocked).
@@ -175,9 +176,26 @@ describe('Crew, plans, renewals and billing', () => {
     expect((await a.api.get('/billing').expect(200)).body).toMatchObject({ plan: { code: 'plus' }, subscription: { status: 'active' } });
     const nudgeOn = async () => (await tenant(a.businessId, (tx) => tx.one(`SELECT enabled FROM agents WHERE agent_key = 'nudge'`))).enabled;
     expect(await nudgeOn()).toBe(true); // Base includes Nudge
+    // A failed payment: the owner is told, the plan stays on through the grace period...
     await send('subscription.halted', 'halted').expect(200);
+    expect((await a.api.get('/billing').expect(200)).body.plan.code).toBe('plus');
+    expect(await tenant(a.businessId, (tx) => tx.one(`SELECT 1 FROM notifications WHERE type = 'plan_ended'`))).toBeTruthy();
+    // The owner message is queued right after the webhook commits.
+    const keys = async (): Promise<string[]> => ((await db.adminTx((tx: any) => tx.q(`SELECT template_key FROM owner_messages WHERE business_id = $1`, [a.businessId]))) as any[]).map((m: any) => m.template_key);
+    for (let i = 0; i < 40 && !(await keys()).includes('payment_failed'); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(await keys()).toContain('payment_failed');
+    const grace = await db.one(`SELECT grace_until FROM businesses WHERE id = $1`, [a.businessId]);
+    expect(new Date(grace!.grace_until).getTime()).toBeGreaterThan(Date.now() + 6 * 86_400_000);
+    // ...then Free once it is over without a payment.
+    await db.adminTx((tx: any) => tx.q(`UPDATE businesses SET grace_until = now() - interval '1 minute' WHERE id = $1`, [a.businessId]));
+    await app.get(AdminOpsService).hourly();
     expect((await a.api.get('/billing').expect(200)).body.plan.code).toBe('free');
     expect(await nudgeOn()).toBe(false); // Free does not: it stops sending
-    expect(await tenant(a.businessId, (tx) => tx.one(`SELECT 1 FROM notifications WHERE type = 'plan_ended'`))).toBeTruthy();
+    const events = await tenant(a.businessId, (tx) => tx.q(`SELECT kind FROM plan_change_events ORDER BY at`));
+    expect(events.map((e: any) => e.kind)).toEqual(['upgrade', 'payment_failed', 'grace_ended']);
+    const after: any[] = await db.adminTx((tx: any) => tx.q(`SELECT template_key FROM owner_messages WHERE business_id = $1`, [a.businessId]));
+    expect(after.map((m: any) => m.template_key)).toEqual(expect.arrayContaining(['welcome_upgrade', 'payment_failed', 'plan_expired']));
+    const feed: any[] = await db.adminTx((tx: any) => tx.q(`SELECT type FROM admin_notifications WHERE data->>'businessId' = $1`, [a.businessId]));
+    expect(feed.some((n: any) => n.type === 'upgrade')).toBe(true);
   });
 });

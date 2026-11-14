@@ -1,17 +1,19 @@
+import { AdminCentreController } from './admin-centre.controller';
+import { AdminAuthController, AdminTeamController } from './admin-auth.controller';
 import { AdminAiController } from './admin-ai.controller';
 import { syncCrewToPlan } from '../billing/crew-plan';
 import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { BUSINESS_TYPES } from '@orbit/shared';
 import { DbService } from '../db/db.service';
-import { AdminGuard, ClientIp, CurrentUser } from '../auth/guards';
-import type { AuthUser } from '../auth/types';
+import { AdminGuard, AdminRoles, ClientIp, CurrentAdmin, CurrentUser } from '../auth/guards';
+import type { AdminSession, AuthUser } from '../auth/types';
 import { AuthService } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { JobsService } from '../jobs/jobs.service';
 import { ZodPipe } from '../common/zod.pipe';
-import { badRequest, notFound } from '../common/errors';
+import { badRequest, forbidden, notFound } from '../common/errors';
 
 const BusinessPatch = z.object({
   status: z.enum(['live', 'paused', 'suspended', 'onboarding']).optional(),
@@ -65,8 +67,11 @@ export class AdminController {
     });
   }
 
+  @AdminRoles('support')
   @Patch('businesses/:id')
-  async patchBusiness(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(BusinessPatch)) body: z.infer<typeof BusinessPatch>, @ClientIp() ip: string) {
+  async patchBusiness(@CurrentUser() u: AuthUser, @CurrentAdmin() adm: AdminSession, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(BusinessPatch)) body: z.infer<typeof BusinessPatch>, @ClientIp() ip: string) {
+    // Plan changes are money actions: Owner and Finance only.
+    if (body.planCode && !['owner', 'finance'].includes(adm.role)) throw forbidden('Your admin role does not allow plan changes.');
     return this.db.adminTx(async (tx) => {
       const before = await tx.one(`SELECT status, plan_id FROM businesses WHERE id = $1`, [id]);
       if (!before) throw notFound();
@@ -90,12 +95,15 @@ export class AdminController {
   }
 
   /** Short-lived token that acts as owner of exactly one business. Audited. */
+  @AdminRoles('support')
   @Post('businesses/:id/impersonate')
-  async impersonate(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @ClientIp() ip: string) {
+  async impersonate(@CurrentUser() u: AuthUser, @CurrentAdmin() adm: AdminSession, @Param('id', ParseUUIDPipe) id: string, @Body() body: { write?: boolean }, @ClientIp() ip: string) {
     const b = await this.db.one(`SELECT id, name FROM businesses WHERE id = $1`, [id]);
     if (!b) throw notFound();
-    await this.audit.write({ businessId: id, actorId: u.id, actorKind: 'admin', action: 'admin.impersonate', entity: 'business', entityId: id, ip });
-    return { token: this.auth.issue({ sub: u.id, imp: { adminId: u.id, businessId: id } }, '1h'), businessId: id, expiresInSec: 3600 };
+    // Read-only by default; only an Owner may act as the business.
+    const readOnly = !(body?.write && adm.role === 'owner');
+    await this.audit.write({ businessId: id, actorId: u.id, actorKind: 'admin', action: 'admin.impersonate', entity: 'business', entityId: id, after: { readOnly }, ip });
+    return { token: this.auth.issue({ sub: u.id, imp: { adminId: u.id, businessId: id, readOnly } }, '1h'), businessId: id, expiresInSec: 3600, readOnly };
   }
 
   @Get('plans')
@@ -103,6 +111,7 @@ export class AdminController {
     return this.db.q(`SELECT code, name, prices, limits, features, active, sort_order AS "sortOrder" FROM plans ORDER BY sort_order`);
   }
 
+  @AdminRoles('finance')
   @Put('plans/:code')
   async putPlan(@CurrentUser() u: AuthUser, @Param('code') code: string, @Body(new ZodPipe(PlanPut)) body: z.infer<typeof PlanPut>, @ClientIp() ip: string) {
     return this.db.adminTx(async (tx) => {
@@ -157,5 +166,5 @@ export class AdminController {
   }
 }
 
-@Module({ controllers: [AdminController, AdminAiController] })
+@Module({ controllers: [AdminController, AdminAiController, AdminAuthController, AdminTeamController, AdminCentreController] })
 export class AdminModule {}

@@ -492,6 +492,7 @@
  "notify.plan_limit": "Aria ने इस महीने {{count}} बातचीत का जवाब दिया, जो आपके प्लान की सीमा है। अब नई चैट टीम संभालेगी। Aria को जवाब देते रहने के लिए अपग्रेड करें।",
  "notify.plan_payment_failed": "आपके प्लान का भुगतान नहीं हुआ, इसलिए अभी आप Free पर हैं। जारी रखने के लिए फिर से प्लान चुनें।",
  "notify.power_broken": "{{power}} को फिर से जोड़ना होगा",
+ "notify.raw": "{{text}}",
  "notify.vox_message": "Vox ने {{customer}} का संदेश लिया: “{{message}}”",
  "nudge.renewal": "नमस्ते {{name}}, {{business}} में आपकी अगली {{service}} का समय हो गया है। बुक करें? {{link}}",
  "ob.cal.builtin": "Orbit का अपना कैलेंडर",

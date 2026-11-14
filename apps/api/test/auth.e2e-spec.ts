@@ -1,6 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { bootApp, newEmail, signIn, api, SEED, SEED_PASSWORD } from './helpers';
+import { bootApp, newEmail, signIn, api, SEED, SEED_PASSWORD , adminApi} from './helpers';
 import { DbService } from '../src/db/db.service';
 import { seed } from '../src/scripts/seed';
 
@@ -91,8 +91,7 @@ describe('admin panel', () => {
   });
 
   it('lists businesses, edits plans and templates, and audits every change', async () => {
-    const admin = await signIn(app, SEED.admin);
-    const a = api(app, admin.token);
+    const a = await adminApi(app);
     expect((await a.get('/admin/health').expect(200)).body.ok).toBe(true);
     expect(Array.isArray((await a.get('/admin/businesses').expect(200)).body)).toBe(true);
     const plans = (await a.get('/admin/plans').expect(200)).body;
@@ -116,12 +115,12 @@ describe('admin panel', () => {
   });
 
   it('can suspend a business, which locks its owner out', async () => {
-    const admin = await signIn(app, SEED.admin);
+    const admin = await adminApi(app);
     const owner = await signIn(app);
     const { body } = await api(app, owner.token).post('/onboarding/business', { type: 'repair' }).expect(201);
-    await api(app, admin.token).patch(`/admin/businesses/${body.businessId}`, { status: 'suspended' }).expect(200);
+    await admin.patch(`/admin/businesses/${body.businessId}`, { status: 'suspended' }).expect(200);
     expect((await api(app, owner.token, body.businessId).get('/bridge')).status).toBe(403);
-    await api(app, admin.token).patch(`/admin/businesses/${body.businessId}`, { status: 'onboarding', planCode: 'business' }).expect(200);
+    await admin.patch(`/admin/businesses/${body.businessId}`, { status: 'onboarding', planCode: 'business' }).expect(200);
     expect((await api(app, owner.token, body.businessId).get('/bridge')).status).toBe(200);
   });
 });

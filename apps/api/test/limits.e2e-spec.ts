@@ -7,7 +7,7 @@ import { PROVIDER_WORDS } from '@orbit/shared';
 import en from '../../../packages/shared/src/locales/en.json';
 import hi from '../../../packages/shared/src/locales/hi.json';
 import kn from '../../../packages/shared/src/locales/kn.json';
-import { bootApp, onboard, signIn, api, SEED } from './helpers';
+import { bootApp, onboard, signIn, api, adminApi } from './helpers';
 import { DbService } from '../src/db/db.service';
 import { JobsService } from '../src/jobs/jobs.service';
 import { AiService } from '../src/ai/ai.service';
@@ -196,8 +196,7 @@ describe('AI tiers, limits and graceful handover', () => {
   });
 
   it('admin edits routing and the budget; the margin view has per-business, per-plan and overall numbers', async () => {
-    const admin = await signIn(app, SEED.admin);
-    const ad = api(app, admin.token);
+    const ad = await adminApi(app);
     const r = (await ad.get('/admin/ai/routing').expect(200)).body;
     expect(Object.keys(r.routing)).toEqual(['free', 'standard', 'premium']);
     const edited = { ...r.routing, standard: { ...r.routing.standard, routes: { ...r.routing.standard.routes, simple: { provider: 'groq', model: 'llama-3.1-8b-instant' } } } };

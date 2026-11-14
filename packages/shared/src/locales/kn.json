@@ -492,6 +492,7 @@
  "notify.plan_limit": "Aria ಈ ತಿಂಗಳು {{count}} ಸಂಭಾಷಣೆಗಳಿಗೆ ಉತ್ತರಿಸಿದೆ, ಇದು ನಿಮ್ಮ ಪ್ಲಾನ್ ಮಿತಿ. ಈಗ ಹೊಸ ಚಾಟ್‌ಗಳನ್ನು ತಂಡ ನೋಡಿಕೊಳ್ಳುತ್ತದೆ. Aria ಉತ್ತರಿಸುತ್ತಿರಲು ಅಪ್‌ಗ್ರೇಡ್ ಮಾಡಿ.",
  "notify.plan_payment_failed": "ನಿಮ್ಮ ಪ್ಲಾನ್ ಪಾವತಿ ಆಗಲಿಲ್ಲ, ಹಾಗಾಗಿ ಈಗ ನೀವು Free ನಲ್ಲಿದ್ದೀರಿ. ಮುಂದುವರಿಸಲು ಮತ್ತೆ ಪ್ಲಾನ್ ಆರಿಸಿ.",
  "notify.power_broken": "{{power}} ಅನ್ನು ಮತ್ತೆ ಜೋಡಿಸಬೇಕು",
+ "notify.raw": "{{text}}",
  "notify.vox_message": "Vox {{customer}} ಅವರ ಸಂದೇಶ ತೆಗೆದುಕೊಂಡಿದೆ: “{{message}}”",
  "nudge.renewal": "ನಮಸ್ಕಾರ {{name}}, {{business}} ನಲ್ಲಿ ನಿಮ್ಮ ಮುಂದಿನ {{service}} ಸಮಯವಾಗಿದೆ. ಬುಕ್ ಮಾಡೋಣವೇ? {{link}}",
  "ob.cal.builtin": "Orbit ನ ಸ್ವಂತ ಕ್ಯಾಲೆಂಡರ್",

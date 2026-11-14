@@ -492,6 +492,7 @@
  "notify.plan_limit": "Aria has answered {{count}} conversations this month, your plan's limit. The team takes new chats now. Upgrade to keep Aria answering.",
  "notify.plan_payment_failed": "Your plan payment did not go through, so you are on Free for now. Choose a plan again to continue.",
  "notify.power_broken": "{{power}} needs reconnecting",
+ "notify.raw": "{{text}}",
  "notify.vox_message": "Vox took a message from {{customer}}: “{{message}}”",
  "nudge.renewal": "Hi {{name}}, it is about time for your next {{service}} at {{business}}. Shall we book it? {{link}}",
  "ob.cal.builtin": "Orbit's own calendar",

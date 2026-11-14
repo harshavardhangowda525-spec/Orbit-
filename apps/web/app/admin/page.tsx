@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, ApiError, session } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 import './admin.css';
+import { AdminBell, AdminGate, Approvals, BusinessesCentre, Budgets, Coupons, Messaging, Overview, Reports, Settings, Subscriptions, Team } from './centre';
 
 const AGENT_KEYS = ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark'] as const;
 const LIMIT_FIELDS: { key: string; label: string; nullable: boolean }[] = [
@@ -28,115 +29,73 @@ const FEATURE_FLAGS: [string, string][] = [
 ];
 
 /** Platform admin panel (Orbit team). English only — internal tool. */
+const TABS: { key: string; label: string; roles?: string[] }[] = [
+  { key: 'overview', label: 'Overview' }, { key: 'businesses', label: 'Businesses' }, { key: 'subscriptions', label: 'Subscriptions' },
+  { key: 'approvals', label: 'Approvals' }, { key: 'budgets', label: 'Budgets' }, { key: 'ai', label: 'AI & margins' },
+  { key: 'plans', label: 'Plans' }, { key: 'coupons', label: 'Coupons' }, { key: 'messaging', label: 'Messaging' },
+  { key: 'reports', label: 'Reports' }, { key: 'settings', label: 'Settings' }, { key: 'team', label: 'Team', roles: ['owner'] },
+  { key: 'templates', label: 'Business templates' }, { key: 'health', label: 'Health' }, { key: 'audit', label: 'Audit' },
+];
+
+/** Platform admin centre (Orbit team). English only — internal tool. */
 export default function Admin() {
   const { me, loading } = useSession();
   const router = useRouter();
-  const [tab, setTab] = useState<'businesses' | 'plans' | 'ai' | 'templates' | 'health' | 'audit'>('businesses');
+  const [tab, setTab] = useState<string>(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab')) || 'overview');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!me || !me.user.isPlatformAdmin)) router.replace('/');
   }, [loading, me, router]);
 
+  const go = (t: string) => {
+    setTab(t);
+    setError(null);
+    window.history.replaceState(null, '', `/admin?tab=${t}`);
+  };
+
   return (
     <div className="space-theme">
       <SpaceBackdrop variant="app" />
       <main className="page wide admin">
         {!me?.user.isPlatformAdmin ? <p className="muted">Loading…</p> : (
-          <>
-            <div className="topbar">
-              <div className="name">Orbit admin</div>
-              <a className="chip" href="/bridge">Back to The Bridge</a>
-            </div>
-            <nav className="views">
-              {(['businesses', 'plans', 'ai', 'templates', 'health', 'audit'] as const).map((t) => (
-                <button key={t} className="chip" aria-current={tab === t} onClick={() => { setTab(t); setError(null); }}>{t === 'ai' ? 'AI & margins' : t[0].toUpperCase() + t.slice(1)}</button>
-              ))}
-            </nav>
-            {error && <p className="error">{error}</p>}
-            {tab === 'businesses' && <Businesses onError={setError} />}
-            {tab === 'plans' && <Plans onError={setError} />}
-            {tab === 'ai' && <AiAdmin onError={setError} />}
-            {tab === 'templates' && <Templates onError={setError} />}
-            {tab === 'health' && <Health />}
-            {tab === 'audit' && <Audit />}
-          </>
+          <AdminGate>
+            {(role) => (
+              <>
+                <div className="topbar">
+                  <div className="name">Orbit admin <span className="chip small">{role}</span></div>
+                  <div className="row"><AdminBell onError={setError} /><a className="chip" href="/bridge">Back to The Bridge</a></div>
+                </div>
+                <nav className="views">
+                  {TABS.filter((t) => !t.roles || t.roles.includes(role)).map((t) => (
+                    <button key={t.key} className="chip" aria-current={tab === t.key} onClick={() => go(t.key)}>{t.label}</button>
+                  ))}
+                </nav>
+                {error && <p className="error">{error}</p>}
+                {tab === 'overview' && <Overview onError={setError} go={go} />}
+                {tab === 'businesses' && <BusinessesCentre onError={setError} role={role} />}
+                {tab === 'subscriptions' && <Subscriptions onError={setError} />}
+                {tab === 'approvals' && <Approvals onError={setError} role={role} />}
+                {tab === 'budgets' && <Budgets onError={setError} role={role} />}
+                {tab === 'ai' && <AiAdmin onError={setError} />}
+                {tab === 'plans' && <Plans onError={setError} />}
+                {tab === 'coupons' && <Coupons onError={setError} role={role} />}
+                {tab === 'messaging' && <Messaging onError={setError} role={role} />}
+                {tab === 'reports' && <Reports onError={setError} />}
+                {tab === 'settings' && <Settings onError={setError} role={role} />}
+                {tab === 'team' && <Team onError={setError} />}
+                {tab === 'templates' && <Templates onError={setError} />}
+                {tab === 'health' && <Health />}
+                {tab === 'audit' && <Audit />}
+              </>
+            )}
+          </AdminGate>
         )}
       </main>
     </div>
   );
 }
 
-function Businesses({ onError }: { onError: (e: string | null) => void }) {
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState<any[]>([]);
-  const [plans, setPlans] = useState<any[]>([]);
-  const load = useCallback(() => {
-    api(`/admin/businesses${q ? `?q=${encodeURIComponent(q)}` : ''}`, { business: false }).then(setRows).catch((e) => onError(e.message));
-  }, [q, onError]);
-  useEffect(() => {
-    load();
-    api('/admin/plans', { business: false }).then(setPlans).catch(() => undefined);
-  }, [load]);
-
-  const patch = async (id: string, body: object) => {
-    try {
-      await api(`/admin/businesses/${id}`, { method: 'PATCH', body, business: false });
-      load();
-    } catch (e) {
-      onError((e as ApiError).message);
-    }
-  };
-  const impersonate = async (id: string) => {
-    if (!confirm('View this business as its owner? This is recorded in the audit log.')) return;
-    const r = await api<{ token: string }>(`/admin/businesses/${id}/impersonate`, { body: {}, business: false });
-    // Keep the admin token in this tab only so the admin can come back.
-    sessionStorage.setItem('orbit.admin.token', session.token() ?? '');
-    session.setToken(r.token);
-    session.setBusinessId(id);
-    window.location.href = '/bridge';
-  };
-
-  return (
-    <section className="stack">
-      <form className="row" onSubmit={(e) => { e.preventDefault(); load(); }}>
-        <input className="input grow" placeholder="Search by name or link" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="btn">Search</button>
-      </form>
-      <div className="card table-wrap">
-        <table className="table">
-          <thead>
-            <tr><th>Business</th><th>Status</th><th>Plan</th><th>Usage (month)</th><th>Health</th><th /></tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => (
-              <tr key={b.id}>
-                <td><b>{b.name}</b><div className="small muted">/{b.slug} · {b.type}</div></td>
-                <td>
-                  <select className="chip" value={b.status} onChange={(e) => patch(b.id, { status: e.target.value })}>
-                    {['onboarding', 'live', 'paused', 'suspended'].map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                  {b.status === 'onboarding' && <div className="small muted">step {b.onboardingStep}</div>}
-                </td>
-                <td>
-                  <select className="chip" value={b.plan} onChange={(e) => patch(b.id, { planCode: e.target.value })}>
-                    {plans.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
-                  </select>
-                </td>
-                <td className="small">{b.aiMessages} AI msgs · {b.callMinutes} min · {b.tasks} tasks<br />{b.customers} customers · {b.bookings30d} bookings/30d</td>
-                <td className="small">{b.failedTasks7d > 0 ? `⚠️ ${b.failedTasks7d} failed tasks` : '✓'}</td>
-                <td><button className="btn small" onClick={() => impersonate(b.id)}>View as owner</button></td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={6} className="muted">No businesses found.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/** Number input where an empty box means "unlimited" (null). */
 function NumField({ label, value, onChange, nullable }: { label: string; value: number | null; onChange: (v: number | null) => void; nullable?: boolean }) {
   return (
     <label className="field">

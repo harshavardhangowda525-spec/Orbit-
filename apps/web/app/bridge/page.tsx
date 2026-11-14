@@ -19,6 +19,7 @@ import { NeedsYou, type Decision } from '@/components/bridge/NeedsYou';
 import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge/Feed';
 import { CrewView, PeopleView, PowersView, DetailsView, ComingView } from '@/components/Views';
 import { SpaceBackdrop } from '@/components/SpaceBackdrop';
+import { MaintenanceBanner } from '@/components/MaintenanceBanner';
 
 import { VIEWS, type BridgeData, type View } from '@/lib/bridge-types';
 
@@ -126,6 +127,7 @@ function Bridge() {
         ready={!!data}
       />
       <div className="br-switch-phone">{switcher}</div>
+      <MaintenanceBanner />
       {me?.impersonation && (
         <p className="note small row between">
           <span>{t('bridge.impersonating')}</span>

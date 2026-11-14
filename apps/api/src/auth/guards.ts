@@ -20,7 +20,7 @@ function tokenIssuer(token: string): string | null {
   }
 }
 import { currentContext } from '../context';
-import type { JwtPayload, Tenant } from './types';
+import type { AdminRole, JwtPayload, Tenant } from './types';
 
 export const IS_PUBLIC = 'orbit:public';
 /** Route needs no sign-in (public business pages, OTP request, health). */
@@ -64,7 +64,7 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   /** Token -> user, shared with the WebSocket gateway. */
-  async resolve(token: string, explain = false): Promise<{ id: string; impersonation?: { adminId: string; businessId: string } } | null> {
+  async resolve(token: string, explain = false): Promise<{ id: string; impersonation?: { adminId: string; businessId: string; readOnly?: boolean } } | null> {
     // A Supabase token the server is not set up to accept: say which setting is wrong (once per issuer in the log).
     const iss = tokenIssuer(token);
     if (iss?.endsWith('.supabase.co/auth/v1') && !(auth.provider === 'supabase' && this.supabase.looksLikeSupabase(token))) {
@@ -98,6 +98,7 @@ export class JwtAuthGuard implements CanActivate {
     }
     try {
       const p = this.jwt.verify<JwtPayload>(token);
+      if (p.adm) return null; // an admin session is not a sign-in on its own
       return { id: p.sub, impersonation: p.imp };
     } catch {
       return null;
@@ -123,8 +124,9 @@ export class TenantGuard implements CanActivate {
 
     let role: Role;
     if (user.impersonation) {
-      // Impersonation tokens are locked to exactly one business.
+      // Impersonation tokens are locked to exactly one business, and read-only unless an Owner asked otherwise.
       if (user.impersonation.businessId !== businessId) throw forbidden();
+      if (user.impersonation.readOnly && req.method !== 'GET') throw forbidden('Viewing as this business is read-only.');
       role = 'owner';
     } else {
       const m = await this.db.one<{ role: Role }>(
@@ -141,22 +143,52 @@ export class TenantGuard implements CanActivate {
     req.tenant = { businessId, role, userId: user.id };
     const c = currentContext();
     if (c) c.businessId = businessId;
+    // When the business was last used (admin centre); at most once every 10 minutes.
+    if (!user.impersonation) this.db.adminTx((tx) => tx.q(`UPDATE businesses SET last_active_at = now() WHERE id = $1 AND (last_active_at IS NULL OR last_active_at < now() - interval '10 minutes')`, [businessId])).catch(() => undefined);
     return true;
   }
 }
 
 /** Platform admins only (the Orbit team). Impersonation tokens never count as admin. */
+export const ADMIN_ROLES = 'adminRoles';
+/** Admin roles allowed on a route. Without it: GET is open to every admin role, changes need Owner. */
+export const AdminRoles = (...roles: AdminRole[]) => SetMetadata(ADMIN_ROLES, roles);
+export const ADMIN_SESSION_HEADER = 'x-admin-session';
+
+/**
+ * Platform admin routes. A normal sign-in is not enough: the request also
+ * carries an admin session (issued after the authenticator code, 8 hours), and
+ * the person must be an active member of the admin team. Their role comes from
+ * the database on every request, so a changed or removed role applies at once.
+ */
 @Injectable()
 export class AdminGuard implements CanActivate {
-  constructor(private readonly db: DbService) {}
+  constructor(private readonly db: DbService, private readonly jwt: JwtService, private readonly reflector: Reflector) {}
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request>();
     if (!req.user || req.user.impersonation) throw forbidden();
-    const u = await this.db.one<{ is_platform_admin: boolean }>(`SELECT is_platform_admin FROM users WHERE id = $1`, [req.user.id]);
-    if (!u?.is_platform_admin) throw forbidden();
+    const row = await this.db.one<{ role: AdminRole; ready: boolean; status: string }>(`SELECT role, status, totp_enabled_at IS NOT NULL AS ready FROM admin_users WHERE user_id = $1`, [req.user.id]);
+    if (row && row.status !== 'active') throw forbidden('Your admin access has been switched off.');
+    const a = row ?? null;
+    const platform = a ? null : await this.db.one<{ is_platform_admin: boolean }>(`SELECT is_platform_admin FROM users WHERE id = $1`, [req.user.id]);
+    if (!a && !platform?.is_platform_admin) throw forbidden();
+    const raw = String(req.headers[ADMIN_SESSION_HEADER] ?? '');
+    let p: JwtPayload | null = null;
+    try {
+      p = raw ? this.jwt.verify<JwtPayload>(raw) : null;
+    } catch {
+      p = null;
+    }
+    if (!a?.ready || !p?.adm || p.sub !== req.user.id) throw new AppError(401, 'admin_session_required', 'Please confirm with your authenticator code to open the admin centre.');
+    const allowed = this.reflector.getAllAndOverride<AdminRole[] | undefined>(ADMIN_ROLES, [ctx.getHandler(), ctx.getClass()]);
+    const ok = allowed ? allowed.includes(a.role) || a.role === 'owner' : req.method === 'GET' ? true : a.role === 'owner';
+    if (!ok) throw forbidden('Your admin role does not allow this.');
+    req.admin = { userId: req.user.id, role: a.role };
     return true;
   }
 }
+
+export const CurrentAdmin = createParamDecorator((_: unknown, ctx: ExecutionContext) => ctx.switchToHttp().getRequest<Request>().admin!);
 
 export const CurrentTenant = createParamDecorator((_: unknown, ctx: ExecutionContext): Tenant => {
   const t = ctx.switchToHttp().getRequest<Request>().tenant;

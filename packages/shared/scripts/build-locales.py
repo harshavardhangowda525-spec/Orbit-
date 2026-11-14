@@ -368,6 +368,7 @@ k('feed.group.follow_up_sent','{{agent}} followed up with {{count}} people','{{a
 k('card.handover','{{customer}} needs a person: {{reason}}','{{customer}} को किसी इंसान की ज़रूरत है: {{reason}}','{{customer}} ಅವರಿಗೆ ಒಬ್ಬ ವ್ಯಕ್ತಿ ಬೇಕು: {{reason}}')
 k('card.handover_visitor','A website visitor needs a person: {{reason}}','एक वेबसाइट विज़िटर को किसी इंसान की ज़रूरत है: {{reason}}','ವೆಬ್‌ಸೈಟ್ ಸಂದರ್ಶಕರಿಗೆ ಒಬ್ಬ ವ್ಯಕ್ತಿ ಬೇಕು: {{reason}}')
 k('card.option.let_aria','Let Aria handle it','Aria को संभालने दें','Aria ನೋಡಿಕೊಳ್ಳಲಿ')
+k('notify.raw','{{text}}','{{text}}','{{text}}')
 k('notify.vox_message','Vox took a message from {{customer}}: “{{message}}”','Vox ने {{customer}} का संदेश लिया: “{{message}}”','Vox {{customer}} ಅವರ ಸಂದೇಶ ತೆಗೆದುಕೊಂಡಿದೆ: “{{message}}”')
 k('notify.handover_visitor','A customer wants to talk to a person','एक ग्राहक किसी इंसान से बात करना चाहते हैं','ಒಬ್ಬ ಗ್ರಾಹಕರು ವ್ಯಕ್ತಿಯೊಂದಿಗೆ ಮಾತನಾಡಲು ಬಯಸುತ್ತಾರೆ')
 k('feed.aria.handover_visitor','{{agent}} passed a customer to you — they want to talk to a person','{{agent}} ने एक ग्राहक को आपको सौंपा — वे किसी इंसान से बात करना चाहते हैं','{{agent}} ಒಬ್ಬ ಗ್ರಾಹಕರನ್ನು ನಿಮಗೆ ವರ್ಗಾಯಿಸಿದೆ — ಅವರು ವ್ಯಕ್ತಿಯೊಂದಿಗೆ ಮಾತನಾಡಲು ಬಯಸುತ್ತಾರೆ')

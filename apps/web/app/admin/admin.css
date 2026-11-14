@@ -27,3 +27,4 @@
 .stat-grid > .card, .admin .stack > .card { margin: 0; }
 .admin textarea.input { font: inherit; }
 .admin tr.flag td { background: rgba(255, 154, 122, 0.12); }
+.admin .views { flex-wrap: wrap; overflow: visible; }
