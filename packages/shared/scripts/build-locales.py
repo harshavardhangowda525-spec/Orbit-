@@ -706,6 +706,7 @@ k('login.reset_email_first','Enter your email above first.','पहले ऊप
 k('login.new_password_title','Choose a new password','नया पासवर्ड चुनें','ಹೊಸ ಪಾಸ್‌ವರ್ಡ್ ಆರಿಸಿ')
 k('login.new_password','New password','नया पासवर्ड','ಹೊಸ ಪಾಸ್‌ವರ್ಡ್')
 k('login.save_password','Save and log in','सेव करें और लॉग इन करें','ಉಳಿಸಿ ಮತ್ತು ಲಾಗ್ ಇನ್ ಮಾಡಿ')
+k('login.session_expired','You were signed out because your session ended. Please log in again.','आपका सत्र समाप्त होने से आप साइन आउट हो गए। कृपया फिर से लॉग इन करें।','ನಿಮ್ಮ ಸೆಷನ್ ಮುಗಿದಿದ್ದರಿಂದ ನೀವು ಸೈನ್ ಔಟ್ ಆಗಿದ್ದೀರಿ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಲಾಗ್ ಇನ್ ಮಾಡಿ.')
 k('login.link_expired','That link has expired or was already used. Please log in, or ask for a new link.','यह लिंक पुराना हो गया है या पहले इस्तेमाल हो चुका है। कृपया लॉग इन करें या नया लिंक माँगें।','ಈ ಲಿಂಕ್ ಅವಧಿ ಮುಗಿದಿದೆ ಅಥವಾ ಈಗಾಗಲೇ ಬಳಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಲಾಗ್ ಇನ್ ಮಾಡಿ ಅಥವಾ ಹೊಸ ಲಿಂಕ್ ಕೇಳಿ.')
 k('login.email','Email address','ईमेल पता','ಇಮೇಲ್ ವಿಳಾಸ')
 k('login.email_invalid','That email address does not look right. Please check it.','यह ईमेल पता सही नहीं लगता। कृपया जाँचें।','ಈ ಇಮೇಲ್ ವಿಳಾಸ ಸರಿಯಿಲ್ಲದಂತಿದೆ. ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ.')

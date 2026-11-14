@@ -44,14 +44,33 @@ export const session = {
   },
 };
 
+/** A sign-in token that is still valid (refreshed first with Supabase Auth), or null. */
+export async function freshToken(force = false): Promise<string | null> {
+  if (getSupabase()) {
+    const fresh = await supabaseToken(force);
+    if (fresh !== session.token()) session.setToken(fresh);
+    return fresh;
+  }
+  return session.token();
+}
+
+let ending = false;
+/**
+ * The sign-in can no longer be renewed: forget it and go to the login page once,
+ * instead of letting screens keep calling the server with a dead token.
+ */
+export function sessionEnded() {
+  if (ending || typeof window === 'undefined') return;
+  ending = true;
+  getSupabase()?.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  session.clear();
+  if (!/^\/login/.test(window.location.pathname)) window.location.href = '/login?expired=1';
+}
+
 /** Call the Orbit API. Errors come back as ApiError with a plain-language message. */
 async function authHeaders(business = true): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  // With Supabase Auth, always send a fresh access token (supabase-js refreshes it).
-  if (getSupabase()) {
-    const fresh = await supabaseToken();
-    if (fresh && fresh !== session.token()) session.setToken(fresh);
-  }
+  if (getSupabase()) await freshToken();
   const token = session.token();
   if (token) headers.authorization = `Bearer ${token}`;
   const biz = session.businessId();
@@ -92,7 +111,7 @@ export async function apiStream(path: string, body: unknown, onEvent: (e: any) =
   if (buf.trim()) onEvent(JSON.parse(buf));
 }
 
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; business?: boolean } = {}, retried = false): Promise<T> {
   const headers = await authHeaders(opts.business !== false);
   let res: Response;
   try {
@@ -104,7 +123,11 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && !getSupabase()) session.setToken(null);
+    // Signed in, but the server no longer accepts the token: renew it once and retry; if that fails, sign out cleanly.
+    if (res.status === 401 && headers.authorization && data?.error?.code === 'unauthorized') {
+      if (!retried && getSupabase() && (await freshToken(true))) return api<T>(path, opts, true);
+      sessionEnded();
+    }
     throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.');
   }
   return data as T;

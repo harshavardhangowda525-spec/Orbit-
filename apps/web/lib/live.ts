@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { apiUrl, session } from './api';
+import { apiUrl, freshToken, session, sessionEnded } from './api';
 
 export interface LiveEvent {
   type: string;
@@ -30,8 +30,17 @@ export function useLive(query: string | null, onEvent: (e: LiveEvent) => void) {
     let tries = 0;
     let stop = false;
     let timer: ReturnType<typeof setTimeout>;
-    const connect = () => {
-      ws = new WebSocket(wsUrl(query));
+    let renewed = false;
+    const connect = async () => {
+      // Owner sockets carry the sign-in token: use a fresh one on every (re)connect, never the one from when the page opened.
+      let q = query;
+      if (/(^|&)token=/.test(q)) {
+        const t = await freshToken().catch(() => null);
+        if (stop) return;
+        if (!t) return sessionEnded();
+        q = q.replace(/(^|&)token=[^&]*/, `$1token=${encodeURIComponent(t)}`);
+      }
+      ws = new WebSocket(wsUrl(q));
       ws.onopen = () => (tries = 0);
       ws.onmessage = (m) => {
         try {
@@ -40,7 +49,15 @@ export function useLive(query: string | null, onEvent: (e: LiveEvent) => void) {
         } catch {}
       };
       ws.onclose = (e) => {
-        if (stop || e.code === 4401) return;
+        if (stop) return;
+        if (e.code === 4401) {
+          // Not accepted: renew the token once; if it still fails, the sign-in has ended.
+          if (renewed || !/(^|&)token=/.test(query)) return /(^|&)token=/.test(query) ? sessionEnded() : undefined;
+          renewed = true;
+          freshToken(true).then((t) => (t ? connect() : sessionEnded())).catch(() => sessionEnded());
+          return;
+        }
+        renewed = false;
         timer = setTimeout(connect, Math.min(30_000, 1000 * 2 ** tries++));
       };
     };

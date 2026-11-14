@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, apiUrl, ApiError, session } from '@/lib/api';
+import { api, apiUrl, ApiError, freshToken, session } from '@/lib/api';
 import { socketUrl } from '@/lib/live';
 import { useI18n } from '@/lib/i18n';
 
@@ -221,7 +221,7 @@ function BrowserCall({ name, onEnd }: { name: string; onEnd: () => void }) {
     const ctx = new AudioContext();
     const src = ctx.createMediaStreamSource(stream);
     const node = ctx.createScriptProcessor(4096, 1, 1);
-    const ws = new WebSocket(socketUrl('/voice/web', `token=${encodeURIComponent(session.token() ?? '')}&business=${session.businessId() ?? ''}`));
+    const ws = new WebSocket(socketUrl('/voice/web', `token=${encodeURIComponent((await freshToken()) ?? '')}&business=${session.businessId() ?? ''}`));
     ws.binaryType = 'arraybuffer';
     const r = { ws, ctx, stream, node, playhead: 0, sources: [] as AudioBufferSourceNode[] };
     ref.current = r;

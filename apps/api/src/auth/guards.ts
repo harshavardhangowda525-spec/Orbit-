@@ -91,7 +91,8 @@ export class JwtAuthGuard implements CanActivate {
       } catch (e) {
         // A known reason (e.g. email not confirmed yet) is shown to the person; anything else is just "sign in again".
         if (explain && e instanceof AppError && e.getStatus() !== 401) throw e;
-        if (!(e instanceof AppError)) logger.warn(`Supabase sign-in rejected: ${(e as Error).message}`, 'Auth');
+        // An expired token is normal (the app renews it and retries); only unexpected failures are worth a warning.
+        if (!(e instanceof AppError) && (e as { code?: string }).code !== 'ERR_JWT_EXPIRED') logger.warn(`Supabase sign-in rejected: ${(e as Error).message}`, 'Auth');
         return null;
       }
     }

@@ -359,6 +359,7 @@
  "login.reset_sent": "If {{email}} has an account, we sent a link to reset the password.",
  "login.save_password": "Save and log in",
  "login.send_code": "Email me a code",
+ "login.session_expired": "You were signed out because your session ended. Please log in again.",
  "login.signup_title": "Create your Orbit account",
  "login.tab_login": "Log in",
  "login.tab_signup": "Sign up",

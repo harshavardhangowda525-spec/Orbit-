@@ -50,6 +50,7 @@ export default function Login() {
     const h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     if (q.get('reset') === '1') setMode('reset');
     if (q.get('error') || h.get('error')) setError(t('login.link_expired'));
+    else if (q.get('expired')) setError(t('login.session_expired'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
