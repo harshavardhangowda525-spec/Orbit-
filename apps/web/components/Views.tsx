@@ -185,7 +185,7 @@ export function PowersView() {
                 )}
                 {form === p.type && p.form === 'meta' && <MetaConnectForm type={p.type as MetaType} onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
                 {form === 'sms' && p.type === 'sms' && <SmsConnectForm onDone={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />}
-                {p.type === 'phone' && p.connection?.status === 'connected' && form !== 'phone' && (
+                {p.type === 'phone' && form !== 'phone' && (
                   <button className="link-btn small advanced" onClick={() => setForm('phone')}>{t('vox.open')}</button>
                 )}
                 {form === 'phone' && p.type === 'phone' && <VoxPanel onChange={reload} />}

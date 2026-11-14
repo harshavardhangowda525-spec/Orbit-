@@ -244,6 +244,13 @@ Try it without a phone line: **Powers → Business phone number → Vox settings
 If Vox cannot take a call (switched off, minutes used up), the stream ends straight away and Exotel moves on to the **Connect** applet, so callers always reach someone.
 Note: Render's free plan sleeps after 15 minutes without traffic; the first call after a sleep can fail. Use a paid instance for a real phone line.
 
+### Or: a voice agent built on Sarvam's platform
+If Vox runs on Sarvam's own Voice Agents platform (number rented from Sarvam, or your Exotel number connected there), connect it to Orbit so its bookings are real:
+1. Orbit → **Powers → Business phone number → Vox settings and test call → Use a Sarvam voice agent → Create key**. Copy the key (shown once).
+2. In Sarvam, save the key as a secret. For each tool listed in Orbit: **Tools → Add API tool**, paste the name, description and cURL, set **Auth → Bearer token** to the key, set **When should this tool run?** as shown, and in the body pick `@Interaction ID` and `@User Identifier` (and `@Call Transcript`, `@Call Length` for `call_ended`).
+3. Paste Orbit's extra instructions at the end of the agent's prompt.
+Bookings then appear in the calendar (with WhatsApp confirmations), messages as notifications, and each call in the inbox and the Crew feed. Endpoints: `POST /integrations/sarvam/{info,availability,book,my-bookings,reschedule,cancel,message,call-ended}`.
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |

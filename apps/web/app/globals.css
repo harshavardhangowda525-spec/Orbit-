@@ -293,3 +293,7 @@ textarea.input { min-height: 220px; font-family: ui-monospace, Menlo, monospace;
 /* Crew settings */
 .crew-settings { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .crew-settings .field { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 0.9rem; }
+
+.input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+.sarvam-tool summary { cursor: pointer; }
+.sarvam-tool > .stack { margin-top: 10px; }

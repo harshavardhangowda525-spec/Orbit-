@@ -129,7 +129,7 @@ export const TOOLS = {
       try {
         const r = await ctx.services.bookings.create(ctx.tx, {
           serviceId: i.service_id, staffId: i.staff_id ?? null, start: new Date(i.start), customer: { name: i.name, phone: i.phone, language: ctx.language },
-          source: `aria:${ctx.channel}`, conversationId: ctx.conversationId,
+          source: `${ctx.agent === 'vox' ? 'vox' : 'aria'}:${ctx.channel}`, conversationId: ctx.conversationId,
         }, ctx.now);
         ctx.effects.customerId = r.customer.id;
         if (r.deposit) {

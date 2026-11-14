@@ -174,12 +174,14 @@ export class BookingsService {
     await this.nudge.onBookingScheduled(tx, booking, now);
 
     const staffName = slot.staffId ? (await tx.one(`SELECT name FROM staff WHERE id = $1`, [slot.staffId]))?.name : null;
-    const byAria = input.source.startsWith('aria');
+    // Bookings made by the Crew (Aria in chat, Vox on the phone) count towards Orbit Earnings.
+    const crewAgent = input.source.startsWith('vox') ? 'vox' : input.source.startsWith('aria') ? 'aria' : null;
+    const byAria = !!crewAgent;
     const channel = input.source.includes(':') ? input.source.split(':')[1] : input.source;
     const first = (customer.name ?? '').split(' ')[0] || customer.phone;
     await postFeed(
       tx,
-      byAria ? 'aria' : 'orbit',
+      crewAgent ?? 'orbit',
       'booking_created',
       { key: byAria ? 'feed.aria.booked' : 'feed.orbit.booked', params: { customer: first, service: svc.name, time: `~t:${slot.start.toISOString()}`, channel: `@channel.${channel}` } },
       { entityType: 'booking', entityId: booking.id, valueAmount: byAria ? Number(svc.price ?? 0) : 0, minutesSaved: byAria ? 6 : 0, channel },

@@ -56,6 +56,8 @@ export function VoxPanel({ onChange }: { onChange: () => void }) {
         <ExotelForm onDone={() => { setEditing(false); load(); onChange(); }} onCancel={s.exotel ? () => setEditing(false) : undefined} />
       ) : null}
 
+      <SarvamAgentSetup />
+
       {s.calls.length > 0 && (
         <div className="stack">
           <h4 className="small muted">{t('vox.recent')}</h4>
@@ -302,4 +304,151 @@ function BrowserCall({ name, onEnd }: { name: string; onEnd: () => void }) {
       {err && <p className="error small">{err}</p>}
     </div>
   );
+}
+
+/** What Sarvam's agent needs, tool by tool: what it does, when it runs, and an example request to paste. */
+const SARVAM_TOOLS: { name: string; path: string; when: 'start' | 'during' | 'end'; description: string; body: Record<string, unknown> }[] = [
+  {
+    name: 'get_business_info', path: 'info', when: 'start',
+    description: "Loads the business's services with prices, opening hours, team, and whether the caller is an existing customer (their name and upcoming bookings). Use these facts; never guess prices or hours.",
+    body: {},
+  },
+  {
+    name: 'check_availability', path: 'availability', when: 'during',
+    description: 'Finds real free appointment times. Send the service the caller wants (in their words), optionally the date (YYYY-MM-DD) and a staff name. Offer at most three of the returned times. Only these times can be booked.',
+    body: { service: 'haircut', date: '2026-11-20', staff: '' },
+  },
+  {
+    name: 'book_appointment', path: 'book', when: 'during',
+    description: 'Books the time the caller chose. Send the service, the exact "start" value from check_availability, and the caller\'s name. Phone is optional (the calling number is used). Call only after the caller confirms.',
+    body: { service: 'haircut', start: '2026-11-20T10:30:00.000Z', name: 'Riya Sharma', phone: '', staff: '' },
+  },
+  {
+    name: 'find_my_bookings', path: 'my-bookings', when: 'during',
+    description: "Lists the caller's upcoming bookings with their booking_id. Use before rescheduling or cancelling. Send a phone number only if they booked with a different number.",
+    body: { phone: '' },
+  },
+  {
+    name: 'reschedule_appointment', path: 'reschedule', when: 'during',
+    description: 'Moves one of the caller\'s bookings (booking_id from find_my_bookings) to a new time (the exact "start" from check_availability).',
+    body: { booking_id: '00000000-0000-0000-0000-000000000000', start: '2026-11-21T11:00:00.000Z' },
+  },
+  {
+    name: 'cancel_appointment', path: 'cancel', when: 'during',
+    description: "Cancels one of the caller's bookings (booking_id from find_my_bookings) after they confirm.",
+    body: { booking_id: '00000000-0000-0000-0000-000000000000' },
+  },
+  {
+    name: 'take_message', path: 'message', when: 'during',
+    description: 'Leaves a message for the team (callback requests, bridal or group enquiries, complaints, anything you cannot handle). Send the caller\'s name and the message.',
+    body: { name: 'Riya', message: 'Wants a quote for a bridal package in December', phone: '' },
+  },
+  {
+    name: 'call_ended', path: 'call-ended', when: 'end',
+    description: 'Sends the finished call to Orbit so it appears in the inbox and the Crew feed.',
+    body: { transcript: 'User: ...\nAgent: ...', call_length: '95', summary: '' },
+  },
+];
+
+function apiBase() {
+  return apiUrl().startsWith('/') ? `${location.protocol}//${location.host}${apiUrl()}` : apiUrl();
+}
+
+function curlFor(tool: (typeof SARVAM_TOOLS)[number]) {
+  const body = { call_id: 'INTERACTION_ID', caller: 'USER_IDENTIFIER', ...tool.body };
+  return `curl -X POST '${apiBase()}/integrations/sarvam/${tool.path}' \\\n  -H 'Authorization: Bearer YOUR_ORBIT_KEY' \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify(body)}'`;
+}
+
+const SARVAM_PROMPT = `USING ORBIT (the business's booking system)
+- At the start of the call you get the business facts from get_business_info. If the caller is a known customer, greet them by name.
+- Before offering any time, call check_availability. Offer at most three of the times it returns, said naturally. Never offer a time it did not return.
+- To book: confirm the service, the time and the caller's name, then call book_appointment with the exact "start" value. Say a confirmation message will follow.
+- To move or cancel: call find_my_bookings, confirm which booking, then reschedule_appointment (after check_availability) or cancel_appointment.
+- If a tool says ok: false, explain briefly and offer another time or to take a message.
+- For callbacks, bridal or group enquiries, complaints, or anything you cannot do: call take_message, then tell the caller the team will call back.`;
+
+/** Connect a voice agent built on Sarvam's platform: an Orbit key plus the tools to paste into Sarvam. */
+export function SarvamAgentSetup() {
+  const { t } = useI18n();
+  const [st, setSt] = useState<{ connected: boolean; lastUsed: string | null } | null>(null);
+  const [key, setKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(() => api<any>('/voice/sarvam').then(setSt).catch((e) => setErr((e as ApiError).message)), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const create = async () => {
+    if (st?.connected && !confirm(t('sarvam.replace_confirm'))) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      setKey((await api<{ key: string }>('/voice/sarvam/key', { body: {} })).key);
+      load();
+    } catch (e) {
+      setErr((e as ApiError).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const revoke = async () => {
+    if (!confirm(t('sarvam.revoke_confirm'))) return;
+    await api('/voice/sarvam/key', { method: 'DELETE' }).catch((e) => setErr((e as ApiError).message));
+    setKey(null);
+    load();
+  };
+  const whenLabel = { start: t('sarvam.when.start'), during: t('sarvam.when.during'), end: t('sarvam.when.end') };
+  return (
+    <div className="card stack" data-testid="sarvam-setup">
+      <div>
+        <b>{t('sarvam.title')}</b>
+        <div className="small muted">{t('sarvam.sub')}</div>
+      </div>
+      {st?.connected && <div className="small">{t('sarvam.connected')}{st.lastUsed ? ` · ${t('sarvam.last_used', { when: new Date(st.lastUsed).toLocaleString() })}` : ''}</div>}
+
+      <h4 className="small muted">{t('sarvam.step1')}</h4>
+      {key ? (
+        <>
+          <CopyLine label={t('sarvam.your_key')} value={key} hint={t('sarvam.key_once')} />
+        </>
+      ) : (
+        <div className="row">
+          <button className="btn primary small" disabled={busy} onClick={create}>{busy ? t('common.wait') : st?.connected ? t('sarvam.new_key') : t('sarvam.create_key')}</button>
+          {st?.connected && <button className="link-btn small" onClick={revoke}>{t('sarvam.revoke')}</button>}
+        </div>
+      )}
+
+      <h4 className="small muted">{t('sarvam.step2')}</h4>
+      <p className="small muted">{t('sarvam.tools_hint')}</p>
+      {SARVAM_TOOLS.map((tool) => (
+        <details key={tool.name} className="meta-help sarvam-tool">
+          <summary><b>{tool.name}</b> · <span className="muted">{whenLabel[tool.when]}</span></summary>
+          <div className="stack">
+            <CopyLine label={t('sarvam.tool_name')} value={tool.name} />
+            <CopyLine label={t('sarvam.tool_desc')} value={tool.description} />
+            <label className="field">
+              <span>{t('sarvam.curl')}</span>
+              <textarea className="input mono" readOnly rows={6} value={curlFor(tool)} onFocus={(e) => e.target.select()} />
+              <CopyBtn value={curlFor(tool)} />
+            </label>
+            <small className="muted">{tool.when === 'end' ? t('sarvam.vars_end') : t('sarvam.vars')}</small>
+          </div>
+        </details>
+      ))}
+
+      <h4 className="small muted">{t('sarvam.step3')}</h4>
+      <label className="field">
+        <span>{t('sarvam.prompt')}</span>
+        <textarea className="input" readOnly rows={8} value={SARVAM_PROMPT} onFocus={(e) => e.target.select()} />
+        <CopyBtn value={SARVAM_PROMPT} />
+      </label>
+      {err && <p className="error small">{err}</p>}
+    </div>
+  );
+}
+
+function CopyBtn({ value }: { value: string }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  return <button type="button" className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => navigator.clipboard?.writeText(value).then(() => setCopied(true))}>{copied ? t('common.copied') : t('common.copy')}</button>;
 }

@@ -2,7 +2,9 @@ import { Body, Controller, Get, Module, Post, UseGuards } from '@nestjs/common';
 import { CurrentTenant, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { BookingsModule } from '../bookings/bookings.module';
+import { KnowledgeModule } from '../knowledge/knowledge.service';
 import { VoiceService } from './voice.service';
+import { SarvamAgentController, SarvamAgentService, SarvamKeyController } from './sarvam-agent';
 
 @UseGuards(TenantGuard)
 @Controller('voice')
@@ -28,5 +30,5 @@ export class VoiceController {
   }
 }
 
-@Module({ imports: [BookingsModule], controllers: [VoiceController], providers: [VoiceService], exports: [VoiceService] })
+@Module({ imports: [BookingsModule, KnowledgeModule], controllers: [VoiceController, SarvamKeyController, SarvamAgentController], providers: [VoiceService, SarvamAgentService], exports: [VoiceService] })
 export class VoiceModule {}
