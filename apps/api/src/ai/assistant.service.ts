@@ -6,6 +6,7 @@ import { ChannelsService } from '../channels/channels.service';
 import { postFeed } from '../common/feed';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
+import { UsageService } from '../billing/usage.service';
 import { AiUnavailableError, type AiBlock, type AiMessage, type AiTool } from './provider';
 
 /** What the owner's screen sees while Orbit works: each step, screens to open, then the answer. */
@@ -211,12 +212,19 @@ export class AssistantService {
     private readonly db: DbService,
     private readonly ai: AiService,
     private readonly channels: ChannelsService,
+    private readonly usage: UsageService,
   ) {}
 
   async run(businessId: string, userId: string, input: AssistantInput, emit: (e: AssistantEvent) => void): Promise<void> {
     const biz = await this.db.withTenant(businessId, (tx) =>
       tx.one(`SELECT b.name, b.type, b.timezone, b.currency, b.status, u.name AS owner FROM businesses b, users u WHERE b.id = app_current_business() AND u.id = $1`, [userId]),
     );
+    // Owner questions have their own daily allowance; the owner is told plainly when it runs out.
+    const asks = await this.db.withTenant(businessId, (tx) => this.usage.assistantAllowed(tx));
+    if (!asks.allowed) {
+      emit({ type: 'error', message: { key: 'assistant.limit', params: { time: `~t:${asks.resetsAt}` } } });
+      return;
+    }
     const taskId = await this.db.withTenant(businessId, async (tx) => {
       const t = await tx.one(
         `INSERT INTO tasks (agent_key, created_by_kind, goal, inputs, status, started_at, attempts, created_by) VALUES ('orbit', 'owner', $1, $2, 'running', now(), 1, $3) RETURNING id`,

@@ -13,6 +13,9 @@ import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
 import { syncCrewToPlan } from './crew-plan';
+import { UsageService } from './usage.service';
+import { AiService } from '../ai/ai.service';
+import { JobsService } from '../jobs/jobs.service';
 
 /** Orbit's own Razorpay account (Orbit charging businesses for their plan). */
 const billingKeys = () => ({ keyId: process.env.ORBIT_RAZORPAY_KEY_ID ?? '', keySecret: process.env.ORBIT_RAZORPAY_KEY_SECRET ?? '', webhookSecret: process.env.ORBIT_RAZORPAY_WEBHOOK_SECRET ?? '' });
@@ -41,14 +44,14 @@ const ACTIVE = ['authenticated', 'active', 'pending'];
  */
 @Injectable()
 export class BillingService {
-  constructor(private readonly db: DbService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DbService, private readonly audit: AuditService, private readonly usageSvc: UsageService, private readonly ai: AiService, private readonly jobs: JobsService) {}
 
   async overview(t: Tenant) {
     return this.db.withTenant(t.businessId, async (tx) => {
       const cur = await tx.one(`SELECT p.code, p.name, p.prices, p.limits, p.features FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`);
       const plans = await tx.q(`SELECT code, name, prices, limits, features FROM plans WHERE active ORDER BY sort_order`);
       const usage = await tx.one(
-        `SELECT (SELECT count(DISTINCT conversation_id)::int FROM ai_usage WHERE agent_key = 'aria' AND conversation_id IS NOT NULL AND created_at >= date_trunc('month', now())) AS "aiConversations",
+        `SELECT (SELECT count(DISTINCT conversation_id)::int FROM ai_usage WHERE agent_key IN ('aria', 'vox') AND conversation_id IS NOT NULL AND error IS NULL AND created_at >= date_trunc('month', now())) AS "aiConversations",
                 (SELECT count(*)::int FROM staff WHERE active AND deleted_at IS NULL) AS staff,
                 (SELECT count(*)::int FROM tasks WHERE created_at >= date_trunc('month', now())) AS tasks`,
       );
@@ -58,7 +61,10 @@ export class BillingService {
          ORDER BY (status = ANY($1)) DESC, created_at DESC LIMIT 1`,
         [ACTIVE],
       );
-      return { plan: cur, plans, usage, subscription: sub ?? null, billing: billingReady() };
+      // Owners see meters (conversations today / this month, reset times), never tokens, costs or AI providers.
+      const meters = await this.usageSvc.meters(tx);
+      const strip = (p: any) => (p ? { ...p, features: { ...p.features, aiTier: undefined } } : p);
+      return { plan: strip(cur), plans: plans.map(strip), usage, meters, subscription: sub ?? null, billing: billingReady() };
     });
   }
 
@@ -79,6 +85,8 @@ export class BillingService {
     const b = z.object({ plan: z.string().min(1).max(40) }).safeParse(raw);
     if (!b.success) throw badRequest('invalid_input', 'Please choose a plan.');
     if (!billingReady()) throw badRequest('billing_not_configured', 'Online payment for plans is not set up yet. Please ask the Orbit team to change your plan.');
+    const custom = await this.db.one(`SELECT 1 FROM plans WHERE code = $1 AND (features->>'customPricing')::boolean`, [b.data.plan]);
+    if (custom) throw badRequest('contact_sales', 'This plan is arranged with the Orbit team. Please contact us.');
     const { plan, providerPlanId } = await this.providerPlan(b.data.plan);
     const s = await rzp('/subscriptions', { plan_id: providerPlanId, total_count: 120, quantity: 1, customer_notify: 1, notes: { business_id: t.businessId, plan_code: plan.code } });
     await this.db.withTenant(t.businessId, (tx) =>
@@ -113,6 +121,15 @@ export class BillingService {
       const currentEnd = ent.current_end ? new Date(Number(ent.current_end) * 1000) : sub.current_end;
       await tx.q(`UPDATE subscriptions SET status = $2, current_end = $3 WHERE id = $1`, [sub.id, status, currentEnd]);
       const event = String(body.event ?? '');
+      // Money actually received (for the margin dashboard): one row per Razorpay payment.
+      const pay = body?.payload?.payment?.entity;
+      if (event === 'subscription.charged' && pay?.id && Number(pay.amount) > 0) {
+        await tx.q(
+          `INSERT INTO subscription_charges (subscription_id, plan_code, provider_payment_id, amount, currency, charged_at) VALUES ($1, $2, $3, $4, $5, to_timestamp($6))
+           ON CONFLICT (provider_payment_id) DO NOTHING`,
+          [sub.id, sub.plan_code, String(pay.id), Number(pay.amount) / 100, String(pay.currency ?? 'INR'), Number(pay.created_at ?? Date.now() / 1000)],
+        );
+      }
       if (['subscription.activated', 'subscription.charged', 'subscription.resumed'].includes(event) && status === 'active') {
         const before = await tx.one(`SELECT plan_id FROM businesses WHERE id = app_current_business()`);
         const changed = await tx.one(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = $1) WHERE id = app_current_business() AND plan_id <> (SELECT id FROM plans WHERE code = $1) RETURNING id, plan_id`, [sub.plan_code]);
@@ -123,7 +140,14 @@ export class BillingService {
           await rzp(`/subscriptions/${encodeURIComponent(o.provider_subscription_id)}/cancel`, { cancel_at_cycle_end: 0 }).catch((e) => logger.warn(`cancel old subscription: ${(e as Error).message}`, 'Billing'));
           await tx.q(`UPDATE subscriptions SET status = 'cancelled' WHERE provider_subscription_id = $1`, [o.provider_subscription_id]);
         }
-        if (changed) await postFeed(tx, 'orbit', 'plan_changed', { key: 'feed.orbit.plan_changed', params: { plan: sub.plan_code } });
+        if (changed) {
+          await postFeed(tx, 'orbit', 'plan_changed', { key: 'feed.orbit.plan_changed', params: { plan: sub.plan_code } });
+          // New AI tier and allowance straight away; customers left waiting get Orbit's offer to reply.
+          tx.afterCommit(() => {
+            this.ai.invalidate(businessId);
+            this.jobs.enqueue('usage.resume', { businessId }, { jobId: `resume-plan:${businessId}:${Date.now()}` }).catch(() => undefined);
+          });
+        }
       }
       if (['subscription.halted', 'subscription.cancelled', 'subscription.completed'].includes(event)) {
         const otherActive = await tx.one(`SELECT 1 FROM subscriptions WHERE id <> $1 AND status = 'active'`, [sub.id]);

@@ -1,3 +1,4 @@
+import { AdminAiController } from './admin-ai.controller';
 import { syncCrewToPlan } from '../billing/crew-plan';
 import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
@@ -7,6 +8,8 @@ import { AdminGuard, ClientIp, CurrentUser } from '../auth/guards';
 import type { AuthUser } from '../auth/types';
 import { AuthService } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
+import { AiService } from '../ai/ai.service';
+import { JobsService } from '../jobs/jobs.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { badRequest, notFound } from '../common/errors';
 
@@ -30,7 +33,7 @@ const TemplatePut = z.object({ content: z.object({ type: z.enum(BUSINESS_TYPES),
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly db: DbService, private readonly auth: AuthService, private readonly audit: AuditService) {}
+  constructor(private readonly db: DbService, private readonly auth: AuthService, private readonly audit: AuditService, private readonly ai: AiService, private readonly jobs: JobsService) {}
 
   @Get('businesses')
   businesses(@Query('q') q?: string) {
@@ -75,6 +78,12 @@ export class AdminController {
       }
       const after = await tx.one(`UPDATE businesses SET status = COALESCE($2, status), plan_id = $3 WHERE id = $1 RETURNING status, plan_id`, [id, body.status ?? null, planId]);
       await syncCrewToPlan(tx, id, before.plan_id, planId);
+      if (before.plan_id !== planId) {
+        tx.afterCommit(() => {
+          this.ai.invalidate(id);
+          this.jobs.enqueue('usage.resume', { businessId: id }, { jobId: `resume-plan:${id}:${Date.now()}` }).catch(() => undefined);
+        });
+      }
       await this.audit.write({ businessId: id, actorId: u.id, actorKind: 'admin', action: 'admin.business.update', entity: 'business', entityId: id, before, after, ip }, tx);
       return after;
     });
@@ -100,8 +109,9 @@ export class AdminController {
       const before = await tx.one(`SELECT name, prices, limits, features, active FROM plans WHERE code = $1`, [code]);
       if (!before) throw notFound();
       const after = await tx.one(
-        `UPDATE plans SET name = $2, prices = $3, limits = $4, features = $5, active = $6 WHERE code = $1 RETURNING code, name, prices, limits, features, active`,
-        [code, body.name, JSON.stringify(body.prices), JSON.stringify(body.limits), JSON.stringify(body.features), body.active],
+        // updated_by marks the plan as edited, so built-in defaults never overwrite it.
+        `UPDATE plans SET name = $2, prices = $3, limits = $4, features = $5, active = $6, updated_by = $7 WHERE code = $1 RETURNING code, name, prices, limits, features, active`,
+        [code, body.name, JSON.stringify(body.prices), JSON.stringify(body.limits), JSON.stringify(body.features), body.active, u.id],
       );
       await this.audit.write({ actorId: u.id, actorKind: 'admin', action: 'admin.plan.update', entity: 'plan', before, after, ip }, tx);
       return after;
@@ -147,5 +157,5 @@ export class AdminController {
   }
 }
 
-@Module({ controllers: [AdminController] })
+@Module({ controllers: [AdminController, AdminAiController] })
 export class AdminModule {}

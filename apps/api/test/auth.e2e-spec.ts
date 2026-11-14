@@ -96,9 +96,9 @@ describe('admin panel', () => {
     expect((await a.get('/admin/health').expect(200)).body.ok).toBe(true);
     expect(Array.isArray((await a.get('/admin/businesses').expect(200)).body)).toBe(true);
     const plans = (await a.get('/admin/plans').expect(200)).body;
-    expect(plans.map((p: any) => p.code)).toEqual(['free', 'base', 'business']);
+    expect(plans.map((p: any) => p.code).slice(0, 5)).toEqual(['free', 'plus', 'pro', 'business', 'enterprise']);
     const base = plans[1];
-    await a.put('/admin/plans/base', { ...base, prices: { INR: 2499, USD: 49 } }).expect(200);
+    await a.put('/admin/plans/plus', { ...base, prices: { INR: 2499, USD: 49 } }).expect(200);
     expect((await a.get('/admin/plans').expect(200)).body[1].prices.INR).toBe(2499);
     const tpl = (await a.get('/admin/templates').expect(200)).body.find((t: any) => t.type === 'salon');
     const r = await a.put('/admin/templates/salon', { content: { ...tpl.content, defaultName: 'My Beauty Salon' } }).expect(200);
@@ -111,7 +111,8 @@ describe('admin panel', () => {
     expect((await api(app, owner.token, body.businessId).get('/onboarding/state')).body.business.name).toBe('My Beauty Salon');
     // Put it back for other tests.
     await a.put('/admin/templates/salon', { content: tpl.content }).expect(200);
-    await a.put('/admin/plans/base', base).expect(200);
+    await a.put('/admin/plans/plus', base).expect(200);
+    await app.get(DbService).adminTx((tx: any) => tx.q(`UPDATE plans SET updated_by = NULL WHERE code = 'plus'`));
   });
 
   it('can suspend a business, which locks its owner out', async () => {

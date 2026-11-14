@@ -19,7 +19,7 @@ export class FakeProvider implements AiProvider {
     this.turn = 0;
   }
 
-  async complete(req: AiRequest): Promise<AiResponse> {
+  async complete(req: AiRequest, _model?: string): Promise<AiResponse> {
     this.calls.push(JSON.parse(JSON.stringify(req)));
     const content = this.script ? await this.script(req, this.turn++) : demoBrain(req);
     const hasTool = content.some((b) => b.type === 'tool_use');

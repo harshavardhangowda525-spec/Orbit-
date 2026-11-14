@@ -6,6 +6,7 @@ import { KnowledgeService } from '../knowledge/knowledge.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { NudgeService } from '../nudge/nudge.service';
 import { ConversationsService } from '../inbox/conversations.service';
+import { UsageService } from '../billing/usage.service';
 import { finishActivity, startActivity } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
@@ -40,6 +41,7 @@ export class AriaService {
     private readonly bookings: BookingsService,
     private readonly nudge: NudgeService,
     private readonly conversations: ConversationsService,
+    private readonly usage: UsageService,
   ) {}
 
   async reply(businessId: string, conversationId: string, now = new Date()): Promise<AriaResult> {
@@ -54,22 +56,9 @@ export class AriaService {
       const staff = await tx.q(`SELECT id, name FROM staff WHERE active AND deleted_at IS NULL ORDER BY created_at`);
       const history = await tx.q(`SELECT direction, sender, body FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT $2`, [conversationId, HISTORY]);
       const customer = conv.customer_id ? await tx.one(`SELECT name FROM customers WHERE id = $1`, [conv.customer_id]) : null;
-      // Plan limit: AI conversations this month (a conversation counts once, however long it is).
-      const usage = await tx.one(
-        `SELECT (p.limits->>'aiConversationsPerMonth')::int AS cap, COALESCE(p.limits->>'overage', 'block') AS overage,
-                (SELECT count(DISTINCT conversation_id)::int FROM ai_usage WHERE agent_key = 'aria' AND conversation_id IS NOT NULL AND created_at >= date_trunc('month', now())) AS used,
-                EXISTS (SELECT 1 FROM ai_usage WHERE conversation_id = $1 AND created_at >= date_trunc('month', now())) AS counted
-         FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.id = app_current_business()`,
-        [conversationId],
-      );
-      const overLimit = agentKey === 'aria' && usage && usage.cap !== null && usage.overage !== 'charge' && !usage.counted && usage.used >= usage.cap;
-      if (overLimit) {
-        const told = await tx.one(`SELECT 1 FROM notifications WHERE type = 'plan_limit' AND created_at >= date_trunc('month', now())`);
-        if (!told) {
-          await tx.q(`INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'plan_limit', $1, '/bridge?view=plan')`, [JSON.stringify({ key: 'notify.plan_limit', params: { count: usage.cap } })]);
-          liveToBusiness(tx, { type: 'notification.new' });
-        }
-      }
+      // Plan allowance (daily / monthly, with grace for chats already under way). Customers never hear about it.
+      const allowance = conv.handled_by === 'aria' ? await this.usage.check(tx, conversationId, now) : { allowed: true };
+      const overLimit = !allowance.allowed ? (allowance.scope ?? 'day') : null;
       return { conv, biz, agent, agentKey, services, staff, history: history.reverse(), customer, overLimit };
     });
     if (!prep) return { replied: false };
@@ -83,7 +72,11 @@ export class AriaService {
 
     // Guardrails that never wait for the AI.
     if (!agent?.enabled || biz.status === 'paused') return this.finish(businessId, conversationId, agentKey, say('aria.auto.team_will_reply'), { handover: 'Aria is switched off' });
-    if (prep.overLimit) return this.finish(businessId, conversationId, agentKey, say('aria.auto.team_will_reply'), { handover: "This month's AI conversations on the plan are used up" });
+    if (prep.overLimit) {
+      // Orbit is paused for this business: one polite note to the customer, the chat waits for the team.
+      await this.db.withTenant(businessId, (tx) => this.usage.park(tx, conversationId, prep.overLimit!, language, now));
+      return { replied: false, handover: true, reason: 'limit' };
+    }
     if (wantsHuman(lastIn.body)) return this.finish(businessId, conversationId, agentKey, say('aria.auto.handover'), { handover: 'Customer asked for a person' });
 
     const template = await this.templates.get(biz.type as BusinessType);

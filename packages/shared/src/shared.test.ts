@@ -6,7 +6,8 @@ import { slugify } from './slug';
 import { bridgeMode, isOpenAt, isValidWeeklyHours, localParts } from './time';
 import { TEMPLATES } from './templates';
 import { BUSINESS_TYPES, AGENT_KEYS } from './types';
-import { DEFAULT_PLANS, planAllowsPower } from './plans';
+import { DEFAULT_PLANS, dailyAiCap, planAllowsPower } from './plans';
+import { DEFAULT_AI_ROUTING, resolveRouting } from './ai-tiers';
 import { AGENTS, agentMayUseTool } from './agents';
 import { LANGUAGES, translate, pickLanguage } from './i18n';
 import en from './locales/en.json';
@@ -93,11 +94,20 @@ test('templates: every business type has a valid template', () => {
   }
 });
 
-test('plans: three plans, business plan allows everything', () => {
-  assert.deepEqual(DEFAULT_PLANS.map((p) => p.code), ['free', 'base', 'business']);
+test('plans: five plans, Pro and up allow every Power; daily caps', () => {
+  assert.deepEqual(DEFAULT_PLANS.map((p) => p.code), ['free', 'plus', 'pro', 'business', 'enterprise']);
   const business = DEFAULT_PLANS[2];
   assert.ok(planAllowsPower(business.features, 'shopify'));
   assert.ok(!planAllowsPower(DEFAULT_PLANS[0].features, 'whatsapp'));
+  // Free: a fixed daily allowance. Paid: 3x the daily share of the month.
+  assert.equal(dailyAiCap(DEFAULT_PLANS[0].limits), 20);
+  assert.equal(dailyAiCap(DEFAULT_PLANS[1].limits), 60);
+  assert.equal(dailyAiCap(DEFAULT_PLANS[4].limits), null);
+  assert.deepEqual(DEFAULT_PLANS.map((p) => p.features.aiTier), ['free', 'standard', 'premium', 'premium', 'premium']);
+  // Stored routing with gaps is filled from the defaults.
+  const r = resolveRouting({ premium: { routes: { command: { provider: 'claude', model: 'claude-opus-5-5' } } } });
+  assert.equal(r.premium.routes.command.provider, 'claude');
+  assert.equal(r.premium.routes.conversation.model, DEFAULT_AI_ROUTING.premium.routes.conversation.model);
 });
 
 test('agents: least privilege tool lists', () => {

@@ -29,6 +29,7 @@ export default function Home() {
           {t('landing.cta')}
         </Link>
         <p className="small muted">{t('landing.under2')}</p>
+        <Link className="small muted" href="/privacy">Privacy</Link>
       </div>
     </main>
   );

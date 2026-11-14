@@ -133,7 +133,7 @@ describe('Crew, plans, renewals and billing', () => {
     expect(await tenant(a.businessId, (tx) => tx.one(`SELECT 1 FROM scheduled_messages WHERE customer_id = $1`, [old.customerId]))).toBeUndefined();
   });
 
-  it('plan limits: staff calendars, and Aria stops at the monthly AI conversations with one notification', async () => {
+  it('plan limits: staff calendars; the plan view shows meters, never AI internals', async () => {
     await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'free') WHERE id = $1`, [a.businessId]);
     const state = (await a.api.get('/onboarding/state').expect(200)).body;
     const tooMany = await a.api.put('/onboarding/essentials', {
@@ -143,46 +143,36 @@ describe('Crew, plans, renewals and billing', () => {
     });
     expect(tooMany.body.error.code).toBe('upgrade_needed'); // Free plan: 1 staff calendar
 
-    await db.q(`INSERT INTO plans (code, name, prices, limits, features, sort_order) SELECT 'tiny', 'Tiny', prices, jsonb_set(limits, '{aiConversationsPerMonth}', '1'), features, 99 FROM plans WHERE code = 'free' ON CONFLICT (code) DO NOTHING`);
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'tiny') WHERE id = $1`, [a.businessId]);
-    const chat = async () => {
-      const s = await http().post(`/public/businesses/${a.slug}/chat`).send({}).expect(201);
-      return http().post(`/public/businesses/${a.slug}/chat/${s.body.conversationId}/messages`).set('x-visitor-token', s.body.visitorToken).send({ text: 'What are your timings?' }).expect(201);
-    };
-    expect((await chat()).body.handledBy).toBe('aria');
-    expect((await chat()).body.handledBy).toBe('human'); // limit reached: the team takes it
-    await chat();
-    const notes = await tenant(a.businessId, (tx) => tx.q(`SELECT title FROM notifications WHERE type = 'plan_limit'`));
-    expect(notes).toHaveLength(1);
+    // AI allowances and the graceful handover are covered in limits.e2e-spec.ts.
     const o = (await a.api.get('/billing').expect(200)).body;
-    expect(o).toMatchObject({ plan: { code: 'tiny' }, usage: { aiConversations: 1, staff: 1 }, billing: false });
-    await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'free') WHERE id = $1`, [a.businessId]);
-    await db.adminTx((tx: any) => tx.q(`DELETE FROM plans WHERE code = 'tiny'`));
+    expect(o).toMatchObject({ plan: { code: 'free' }, usage: { staff: 1 }, billing: false });
+    expect(o.meters.today.cap).toBe(20);
+    expect(JSON.stringify(o)).not.toMatch(/aiTier|groq|claude/i);
   });
 
   it('billing: upgrade through a Razorpay subscription; the plan switches on when Razorpay confirms, and back to Free when it stops', async () => {
     await db.q(`UPDATE businesses SET plan_id = (SELECT id FROM plans WHERE code = 'free') WHERE id = $1`, [a.businessId]);
     await tenant(a.businessId, (tx) => tx.q(`UPDATE agents SET enabled = false WHERE agent_key = 'nudge'`));
-    expect((await a.api.post('/billing/upgrade', { plan: 'base' })).body.error.code).toBe('billing_not_configured');
+    expect((await a.api.post('/billing/upgrade', { plan: 'plus' })).body.error.code).toBe('billing_not_configured');
     process.env.ORBIT_RAZORPAY_KEY_ID = 'rzp_live_orbit';
     process.env.ORBIT_RAZORPAY_KEY_SECRET = 'orbit-secret';
     process.env.ORBIT_RAZORPAY_WEBHOOK_SECRET = 'orbit-hook-secret';
-    const r = await a.api.post('/billing/upgrade', { plan: 'base' }).expect(201);
+    const r = await a.api.post('/billing/upgrade', { plan: 'plus' }).expect(201);
     expect(r.body.url).toMatch(/^https:\/\/rzp\.io\//);
     expect(calls.find((c) => c.url.endsWith('/v1/plans'))?.body).toMatchObject({ period: 'monthly', interval: 1, item: { currency: 'INR' } });
-    expect(calls.find((c) => c.url.endsWith('/v1/subscriptions'))?.body.notes).toMatchObject({ business_id: a.businessId, plan_code: 'base' });
+    expect(calls.find((c) => c.url.endsWith('/v1/subscriptions'))?.body.notes).toMatchObject({ business_id: a.businessId, plan_code: 'plus' });
     // The Razorpay plan is reused next time.
     calls = [];
-    await a.api.post('/billing/upgrade', { plan: 'base' }).expect(201);
+    await a.api.post('/billing/upgrade', { plan: 'plus' }).expect(201);
     expect(calls.some((c) => c.url.endsWith('/v1/plans'))).toBe(false);
 
     const send = (event: string, status: string, secret = 'orbit-hook-secret') => {
-      const raw = JSON.stringify({ event, payload: { subscription: { entity: { id: r.body.subscriptionId, status, current_end: Math.floor(Date.now() / 1000) + 30 * 86400, notes: { business_id: a.businessId, plan_code: 'base' } } } } });
+      const raw = JSON.stringify({ event, payload: { subscription: { entity: { id: r.body.subscriptionId, status, current_end: Math.floor(Date.now() / 1000) + 30 * 86400, notes: { business_id: a.businessId, plan_code: 'plus' } } } } });
       return http().post('/webhooks/orbit-billing').set('content-type', 'application/json').set('x-razorpay-signature', createHmac('sha256', secret).update(raw).digest('hex')).send(raw);
     };
     await send('subscription.activated', 'active', 'wrong').expect(401);
     await send('subscription.activated', 'active').expect(200);
-    expect((await a.api.get('/billing').expect(200)).body).toMatchObject({ plan: { code: 'base' }, subscription: { status: 'active' } });
+    expect((await a.api.get('/billing').expect(200)).body).toMatchObject({ plan: { code: 'plus' }, subscription: { status: 'active' } });
     const nudgeOn = async () => (await tenant(a.businessId, (tx) => tx.one(`SELECT enabled FROM agents WHERE agent_key = 'nudge'`))).enabled;
     expect(await nudgeOn()).toBe(true); // Base includes Nudge
     await send('subscription.halted', 'halted').expect(200);

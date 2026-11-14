@@ -5,6 +5,7 @@ import { badRequest, notFound } from '../common/errors';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { ConversationsService } from '../inbox/conversations.service';
+import { UsageService } from '../billing/usage.service';
 import { groupFeed, type FeedItem } from './feed-group';
 
 const num = (v: unknown) => Number(v ?? 0);
@@ -15,7 +16,7 @@ export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour 
 
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService, private readonly conversations: ConversationsService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService) {}
 
   /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
   async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
@@ -72,6 +73,9 @@ export class BridgeService {
         badReviewsOpen: num(s.bad_reviews),
         failedTasks: num(s.failed_tasks),
       });
+      // Orbit paused by the plan's allowance: say so plainly, and that customers are waiting in the inbox.
+      const paused = await this.usage.paused(tx, now);
+      if (paused) pulse.sentence = { key: paused.scope === 'day' ? 'pulse.ai_paused_day' : 'pulse.ai_paused_month', params: { count: paused.waiting } };
       await this.snapshotPulse(tx, pulse.score, pulse.sentence, s);
 
       const cards = await this.cards(tx, names);
@@ -94,7 +98,9 @@ export class BridgeService {
         [now.toISOString()],
       );
       const working = new Set(running.map((r) => r.agent_key));
-      const ticker = running.length
+      const ticker = paused
+        ? [{ agent: 'orbit', name: names.orbit ?? 'Orbit', sentence: { key: paused.scope === 'day' ? 'ticker.ai_paused_day' : 'ticker.ai_paused_month', params: { count: paused.waiting } }, live: false }]
+        : running.length
         ? running.map((r) => ({ agent: r.agent_key, name: names[r.agent_key] ?? r.agent_key, sentence: withAgent(r.activity, names[r.agent_key]), live: true }))
         : feedItems.slice(0, 1).map((f) => ({ agent: f.agent, name: names[f.agent] ?? f.agent, sentence: f.sentence, live: false }));
 
@@ -134,6 +140,7 @@ export class BridgeService {
         dayPart: part,
         mode: briefingType,
         isNew: num(s.crew_events) === 0 && !hasHistory && num(s.bookings_today) === 0,
+        paused,
         pulse: { ...pulse, numbers: { moneyToday: num(s.money_today), bookingsToday: num(s.bookings_today), needYou: cards.length, peopleWaiting: num(s.people_waiting) } },
         briefing,
         needsYou: cards,
@@ -153,6 +160,9 @@ export class BridgeService {
        WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < now() RETURNING id, agent_key, task_id, type, context`,
     );
     for (const c of expired) {
+      // Limit cards end on their own (reset, or the owner did not choose): no feed line; waiting chats stay with the team.
+      if (c.type === 'limit_resume') await tx.q(`UPDATE conversations SET parked_for_limit_at = NULL WHERE id = ANY($1::uuid[])`, [c.context?.conversationIds ?? []]);
+      if (c.type === 'limit_waiting' || c.type === 'limit_resume') continue;
       if (c.task_id) await tx.q(`UPDATE tasks SET status = 'cancelled', result = '{"reason":"card_expired"}' WHERE id = $1 AND status = 'waiting_approval'`, [c.task_id]);
       await postFeed(tx, 'orbit', 'card_expired', { key: c.type === 'handover' ? 'feed.orbit.handover_expired' : 'feed.orbit.card_expired' }, { entityType: 'approval_card', entityId: c.id });
     }
@@ -198,6 +208,10 @@ export class BridgeService {
           await this.conversations.takeover(tx, card.context.conversationId, userId);
           open = `/inbox/${card.context.conversationId}`;
         } else await this.conversations.handback(tx, card.context.conversationId, userId);
+      } else if (card.type === 'limit_waiting') {
+        open = optionKey === 'upgrade' ? '/bridge?view=plan' : '/inbox';
+      } else if (card.type === 'limit_resume') {
+        await this.usage.decideResume(tx, card.context?.conversationIds ?? [], option.outcome === 'approved');
       } else if (card.type === 'discount' && option.outcome === 'edited' && card.context?.conversationId) {
         open = `/inbox/${card.context.conversationId}`;
       }
@@ -209,7 +223,7 @@ export class BridgeService {
         );
       }
       const agent = await tx.one(`SELECT display_name FROM agents WHERE agent_key = $1`, [card.agent_key]);
-      await postFeed(tx, 'orbit', `card_${option.outcome}`, { key: `feed.orbit.card_${option.outcome}`, params: { agent: agent?.display_name ?? card.agent_key } }, { entityType: 'approval_card', entityId: cardId });
+      if (!String(card.type).startsWith('limit_')) await postFeed(tx, 'orbit', `card_${option.outcome}`, { key: `feed.orbit.card_${option.outcome}`, params: { agent: agent?.display_name ?? card.agent_key } }, { entityType: 'approval_card', entityId: cardId });
       liveToBusiness(tx, { type: 'card.decided', data: { id: cardId } });
       return { ok: true, status: option.outcome, open };
     }, userId);

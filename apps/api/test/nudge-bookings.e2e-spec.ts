@@ -33,7 +33,7 @@ describe('bookings, Nudge and briefings', () => {
     nudge = app.get(NudgeService);
     jobs = app.get(JobsService);
     S = await onboard(app, 'salon', 'Nudge Salon');
-    await upgrade(app, S.businessId, 'base'); // Nudge is on paid plans
+    await upgrade(app, S.businessId, 'plus'); // Nudge is on paid plans
     const state = (await S.api.get('/onboarding/state').expect(200)).body;
     haircut = state.services.find((s: any) => s.name === 'Haircut');
   });

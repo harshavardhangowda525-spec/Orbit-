@@ -30,7 +30,7 @@ interface SampleBusiness {
   slug: string;
   name: string;
   type: BusinessType;
-  plan: 'free' | 'base' | 'business';
+  plan: 'free' | 'plus' | 'pro' | 'business';
   ownerEmail: string;
   ownerName: string;
   city: string;
@@ -45,7 +45,7 @@ const SALON: SampleBusiness = {
   slug: 'glow-studio',
   name: 'Glow Studio',
   type: 'salon',
-  plan: 'base',
+  plan: 'plus',
   // Always a made-up address, so demo data never attaches to a real person's account.
   ownerEmail: 'meera@glowstudio.example',
   ownerName: 'Meera',

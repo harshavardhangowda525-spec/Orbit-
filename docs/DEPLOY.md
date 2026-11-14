@@ -251,6 +251,12 @@ If Vox runs on Sarvam's own Voice Agents platform (number rented from Sarvam, or
 3. Paste Orbit's extra instructions at the end of the agent's prompt.
 Bookings then appear in the calendar (with WhatsApp confirmations), messages as notifications, and each call in the inbox and the Crew feed. Endpoints: `POST /integrations/sarvam/{info,availability,book,my-bookings,reschedule,cancel,message,call-ended}`.
 
+## Plans, AI tiers and limits
+- Plans (Free, Plus ₹999, Pro ₹2,999, Business ₹7,999, Enterprise custom) live in the database. Edit prices, allowances, AI tier, Crew and Powers in **Admin → Plans**; an edited plan is never overwritten by a deploy.
+- **Admin → AI & margins**: which provider and model serve each tier (free / standard / premium) and task (customer conversations, Command Orbit, simple text), with fallbacks. Everything runs on Groq until an `ANTHROPIC_API_KEY` is added and the premium tier is pointed at Claude there. Businesses only ever see "Orbit".
+- Free: a daily allowance (default 20 conversations, resets at midnight in the business's timezone). Paid: a monthly allowance plus a daily cap of 3× the daily share. Chats already under way get up to 10 more replies; new ones get one polite note and wait in the inbox, the owner is told, and Orbit offers to reply when the allowance is back.
+- Margins: revenue comes from Razorpay subscription charges; AI budget = net revenue × the set % (default 25%).
+
 ## Optional settings (orbit-api → Environment)
 
 | What | Setting |

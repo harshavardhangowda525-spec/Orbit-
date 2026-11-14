@@ -5,9 +5,11 @@ import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 
-interface Plan { code: string; name: string; prices: { INR: number; USD: number }; limits: Record<string, any>; features: { agents: string[] } }
+interface Plan { code: string; name: string; prices: { INR: number; USD: number }; limits: Record<string, any>; features: { agents: string[]; customPricing?: boolean } }
+interface Meter { used: number; cap: number | null; resetsAt?: string }
 interface Billing {
   plan: Plan; plans: Plan[]; usage: { aiConversations: number; staff: number; tasks: number };
+  meters: { today: Meter; month: Meter; assistantToday: Meter; wallet: number } | null;
   subscription: { planCode: string; status: string; url: string | null; currentEnd: string | null; cancelAtCycleEnd: boolean } | null; billing: boolean;
 }
 
@@ -45,6 +47,16 @@ export function PlanView() {
   };
   if (!b) return <p className="muted">{msg ?? t('common.loading')}</p>;
   const lim = b.plan.limits;
+  const m = b.meters;
+  const when = (iso?: string) => (iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+  // On Free, the next plan's biggest gains (from the plan configuration).
+  const idx = b.plans.findIndex((p) => p.code === b.plan.code);
+  const next = b.plans.slice(idx + 1).find((p) => !p.features.customPricing && p.prices.INR > 0);
+  const gains = (p: Plan) => [
+    p.limits.aiConversationsPerMonth ? t('plan.ai_month_n', { n: p.limits.aiConversationsPerMonth }) : p.limits.aiConversationsPerDay ? t('plan.ai_day_n', { n: p.limits.aiConversationsPerDay }) : t('plan.ai_unlimited'),
+    ...p.features.agents.filter((a) => a !== 'orbit' && !b.plan.features.agents.includes(a)).map((a) => t(`agent.${a}.name`)),
+    ...(p.limits.callMinutesPerMonth > 0 ? [t('plan.calls_n', { n: p.limits.callMinutesPerMonth })] : []),
+  ];
   const bar = (used: number, cap: number | null) => (cap == null ? null : <div className="bar"><i style={{ width: `${Math.min(100, (used / Math.max(1, cap)) * 100)}%` }} className={used >= cap ? 'full' : ''} /></div>);
   return (
     <section className="stack plan" data-testid="plan">
@@ -55,24 +67,45 @@ export function PlanView() {
       {msg && <p className="error">{msg}</p>}
       <div className="card stack">
         <h3>{t('plan.usage')}</h3>
-        <div className="usage-row"><span>{t('plan.ai')}</span><b>{b.usage.aiConversations}{lim.aiConversationsPerMonth != null ? ` / ${lim.aiConversationsPerMonth}` : ''}</b></div>
-        {bar(b.usage.aiConversations, lim.aiConversationsPerMonth)}
+        {m?.today.cap != null && (
+          <>
+            <div className="usage-row" data-testid="meter-today"><span>{t('plan.today_replies', { used: m.today.used, cap: m.today.cap })}</span><small className="muted">{t('plan.resets_at', { time: when(m.today.resetsAt) })}</small></div>
+            {bar(m.today.used, m.today.cap)}
+          </>
+        )}
+        {m && (
+          <>
+            <div className="usage-row" data-testid="meter-month"><span>{m.month.cap != null ? t('plan.month_conversations', { used: m.month.used, cap: m.month.cap }) : t('plan.month_unlimited', { used: m.month.used })}</span>{m.month.cap != null && <small className="muted">{t('plan.resets_at', { time: when(m.month.resetsAt) })}</small>}</div>
+            {bar(m.month.used, m.month.cap)}
+            {m.wallet > 0 && <div className="usage-row small"><span>{t('plan.wallet', { amount: money(m.wallet) })}</span></div>}
+          </>
+        )}
         <div className="usage-row"><span>{t('plan.staff')}</span><b>{b.usage.staff}{lim.staffCalendars != null ? ` / ${lim.staffCalendars}` : ''}</b></div>
         {bar(b.usage.staff, lim.staffCalendars)}
       </div>
+      {next && owner && b.plan.prices.INR === 0 && (
+        <div className="card stack plan-next" data-testid="plan-next">
+          <b>{t('plan.next_adds', { plan: next.name })}</b>
+          <ul className="small">{gains(next).map((g) => <li key={g}>{g}</li>)}</ul>
+          <button className="btn primary" disabled={!!busy} onClick={() => upgrade(next.code)}>{busy === next.code ? t('common.wait') : t('plan.choose', { plan: next.name })}</button>
+        </div>
+      )}
       <div className="plan-grid">
         {b.plans.map((p) => {
           const current = p.code === b.plan.code;
           return (
             <div key={p.code} className={`card plan-card ${current ? 'current' : ''}`} data-plan={p.code}>
               <b className="plan-name">{p.name}</b>
-              <div className="plan-price"><>{money(p.prices.INR)}<span>{t('plan.per_month')}</span></></div>
+              <div className="plan-price">{p.features.customPricing ? <>{t('plan.custom_price')}</> : <>{money(p.prices.INR)}<span>{t('plan.per_month')}</span></>}</div>
               <ul className="small">
-                <li>{p.limits.aiConversationsPerMonth == null ? t('plan.ai_unlimited') : t('plan.ai_n', { n: p.limits.aiConversationsPerMonth })}</li>
+                <li>{p.limits.aiConversationsPerMonth != null ? t('plan.ai_month_n', { n: p.limits.aiConversationsPerMonth }) : p.limits.aiConversationsPerDay != null ? t('plan.ai_day_n', { n: p.limits.aiConversationsPerDay }) : t('plan.ai_unlimited')}</li>
+                {p.limits.callMinutesPerMonth > 0 && <li>{t('plan.calls_n', { n: p.limits.callMinutesPerMonth })}</li>}
                 <li>{p.limits.staffCalendars == null ? t('plan.staff_unlimited') : t('plan.staff_n', { n: p.limits.staffCalendars })}</li>
                 <li>{t('plan.crew', { names: p.features.agents.filter((a) => a !== 'orbit').map((a) => t(`agent.${a}.name`)).join(', ') })}</li>
               </ul>
-              {current ? <span className="chip">{t('plan.your_plan')}</span> : p.prices.INR > 0 && owner ? (
+              {current ? <span className="chip">{t('plan.your_plan')}</span> : p.features.customPricing ? (
+                <span className="chip">{t('plan.custom')}</span>
+              ) : p.prices.INR > 0 && owner ? (
                 <button className="btn primary" disabled={!!busy} onClick={() => upgrade(p.code)}>{busy === p.code ? t('common.wait') : t('plan.choose', { plan: p.name })}</button>
               ) : null}
             </div>

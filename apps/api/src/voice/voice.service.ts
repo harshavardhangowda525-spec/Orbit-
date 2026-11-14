@@ -216,7 +216,7 @@ export class VoiceService implements OnModuleInit {
 
   /** Vox may take a call when speech is set up, Vox is on and on the plan, and minutes are left. */
   async canTakeCall(businessId: string, purpose: 'inbound' | 'test'): Promise<{ ok: boolean; reason?: string; message?: string }> {
-    if (!this.speech) return { ok: false, reason: 'speech_not_configured', message: 'Phone calls are not set up on this server yet (SARVAM_API_KEY).' };
+    if (!this.speech) return { ok: false, reason: 'speech_not_configured', message: 'Phone calls are not switched on for Orbit yet. Please ask the Orbit team.' };
     const r = await this.db.withTenant(businessId, (tx) =>
       tx.one(
         `SELECT b.status, p.features, (p.limits->>'callMinutesPerMonth')::int AS cap, COALESCE(p.limits->>'overage', 'block') AS overage,

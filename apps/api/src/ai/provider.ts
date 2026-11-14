@@ -23,7 +23,8 @@ export interface AiResponse {
 /** Swappable provider so the rest of Orbit never talks to an LLM SDK directly. */
 export interface AiProvider {
   readonly name: string;
-  complete(req: AiRequest): Promise<AiResponse>;
+  /** `model` is chosen by the tier routing; providers fall back to their own default without it. */
+  complete(req: AiRequest, model?: string): Promise<AiResponse>;
 }
 
 export class AiUnavailableError extends Error {}
@@ -53,12 +54,17 @@ export function costOf(model: string, u: AiResponse['usage']): number {
  */
 export class ClaudeProvider implements AiProvider {
   readonly name = 'claude';
-  private client = new Anthropic({ timeout: 45_000, maxRetries: 2 });
+  private _client: Anthropic | null = null;
+  /** Created on first use, so servers without an Anthropic key still start. */
+  private get client() {
+    return (this._client ??= new Anthropic({ timeout: 45_000, maxRetries: 2 }));
+  }
 
-  async complete(req: AiRequest): Promise<AiResponse> {
+  async complete(req: AiRequest, model?: string): Promise<AiResponse> {
+    if (!process.env.ANTHROPIC_API_KEY) throw new AiUnavailableError('ANTHROPIC_API_KEY is not set');
     try {
       const r = await this.client.beta.messages.create({
-        model: runtime.aiModel,
+        model: model && model.startsWith('claude') ? model : runtime.aiModel,
         max_tokens: req.maxTokens ?? 4000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',

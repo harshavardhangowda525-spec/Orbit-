@@ -13,9 +13,9 @@ export function groqModel(): string {
 /** Preferred chat models with tool use, best first (Groq retires models; the list is matched against what the account has). */
 const PREFERRED = [/^openai\/gpt-oss-120b/, /llama-4-maverick/, /kimi-k2/, /llama-3\.3-70b/, /qwen3-32b/, /llama-4-scout/, /^openai\/gpt-oss-20b/, /qwen/, /llama-3\.1-8b/];
 const NOT_CHAT = /whisper|tts|guard|playai|orpheus|compound|allam|distil|embed/i;
-/** Model chosen after the configured one was refused; kept for the life of the process. */
-let fallbackModel: string | null = null;
-export const resetGroqFallback = () => (fallbackModel = null);
+/** Replacement chosen for each model Groq refused; kept for the life of the process. */
+const replaced = new Map<string, string>();
+export const resetGroqFallback = () => replaced.clear();
 
 /** Pick the best chat model the account can use from Groq's model list. */
 export function pickGroqModel(ids: string[], refused: string): string | null {
@@ -93,10 +93,12 @@ export function fromGroqChoice(choice: any): { content: AiBlock[]; stopReason: s
 export class GroqProvider implements AiProvider {
   readonly name = 'groq';
 
-  async complete(req: AiRequest): Promise<AiResponse> {
+  /** `model` comes from the tier routing; without one, GROQ_MODEL / the default. */
+  async complete(req: AiRequest, model?: string): Promise<AiResponse> {
     const key = process.env.GROQ_API_KEY;
     if (!key) throw new AiUnavailableError('GROQ_API_KEY is not set');
-    const configured = fallbackModel ?? groqModel();
+    const requested = model || groqModel();
+    const configured = replaced.get(requested) ?? requested;
     try {
       return await this.send(key, configured, req);
     } catch (e) {
@@ -105,8 +107,8 @@ export class GroqProvider implements AiProvider {
       const ids = await listModels(key);
       const next = pickGroqModel(ids, configured);
       if (!next) throw new AiUnavailableError(`Groq model ${configured} is not available and no other chat model was found`);
-      logger.warn(`Groq model ${configured} is not available; using ${next}. Set GROQ_MODEL to choose another.`, 'AI');
-      fallbackModel = next;
+      logger.warn(`Groq model ${configured} is not available; using ${next}. Change it in admin → AI routing.`, 'AI');
+      replaced.set(requested, next);
       return this.send(key, next, req);
     }
   }
