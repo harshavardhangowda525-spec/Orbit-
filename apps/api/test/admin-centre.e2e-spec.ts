@@ -184,6 +184,12 @@ describe('Admin control centre', () => {
     const target = await onboard(app, 'clinic', 'Segment Clinic');
     const optOut = await onboard(app, 'clinic', 'Quiet Clinic');
     await admin(`INSERT INTO notification_preferences (user_id, marketing) VALUES ($1, false) ON CONFLICT (user_id) DO UPDATE SET marketing = false`, [optOut.owner.userId]);
+    // The target owner's quiet hours are far from now, so this test does not depend on the time of day.
+    const hourNow = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Kolkata' }).format(new Date()));
+    await admin(
+      `INSERT INTO notification_preferences (user_id, quiet_start, quiet_end) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET quiet_start = $2, quiet_end = $3`,
+      [target.owner.userId, (hourNow + 12) % 24, (hourNow + 13) % 24],
+    );
     const segment = { businessIds: [target.businessId, optOut.businessId] };
     expect((await support.post('/admin/messaging/audience', { segment, category: 'marketing' }).expect(201)).body).toEqual({ businesses: 2, owners: 1 });
     const b = (await support.post('/admin/messaging/broadcasts', { title: 'Diwali offer', content: { en: { subject: 'Diwali offer from Orbit', body: 'Hi {{owner}}, 20% off Pro this week: {{link}}' } }, segment, channels: ['inapp', 'whatsapp'], link: '/bridge?view=plan' }).expect(201)).body;

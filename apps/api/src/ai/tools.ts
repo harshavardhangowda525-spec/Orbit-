@@ -8,6 +8,7 @@ import type { NudgeService } from '../nudge/nudge.service';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { AppError } from '../common/errors';
+import { agentName, fact } from '../trust/trace';
 
 /** Everything a tool may touch. All DB access goes through `tx`, which is scoped to one business by RLS. */
 export interface ToolContext {
@@ -156,7 +157,7 @@ export const TOOLS = {
       const own = cid && (await ctx.tx.one(`SELECT 1 FROM bookings WHERE id = $1 AND customer_id = $2`, [i.booking_id, cid]));
       if (!own) return { ok: false, error: 'That booking does not belong to this customer.' };
       try {
-        const r = await ctx.services.bookings.reschedule(ctx.tx, i.booking_id, new Date(i.start), undefined, ctx.now);
+        const r = await ctx.services.bookings.reschedule(ctx.tx, i.booking_id, new Date(i.start), undefined, ctx.now, ctx.agent === 'vox' ? 'vox' : 'aria');
         return { ok: true, when: await localLabel(ctx, new Date(r.start_at)) };
       } catch (e) {
         if (e instanceof AppError) return { ok: false, error: (e.getResponse() as any).error.message };
@@ -173,7 +174,7 @@ export const TOOLS = {
       const own = cid && (await ctx.tx.one(`SELECT 1 FROM bookings WHERE id = $1 AND customer_id = $2`, [i.booking_id, cid]));
       if (!own) return { ok: false, error: 'That booking does not belong to this customer.' };
       try {
-        await ctx.services.bookings.cancel(ctx.tx, i.booking_id, 'customer via chat', 'aria');
+        await ctx.services.bookings.cancel(ctx.tx, i.booking_id, ctx.agent === 'vox' ? 'customer on the phone' : 'customer via chat', ctx.agent === 'vox' ? 'vox' : 'aria');
         return { ok: true };
       } catch (e) {
         if (e instanceof AppError) return { ok: false, error: (e.getResponse() as any).error.message };
@@ -205,7 +206,16 @@ export const TOOLS = {
         [cid, i.interest, i.service_id ?? null, ctx.channel, JSON.stringify(i.answers ?? {})],
       );
       const c = await ctx.tx.one(`SELECT name FROM customers WHERE id = $1`, [cid]);
-      await postFeed(ctx.tx, 'aria', 'lead_captured', { key: 'feed.aria.lead', params: { customer: (c?.name ?? '').split(' ')[0] || '—', interest: i.interest } }, { entityType: 'lead', entityId: lead.id, minutesSaved: 5, channel: ctx.channel });
+      const who = (c?.name ?? '').split(' ')[0] || '—';
+      await postFeed(ctx.tx, 'aria', 'lead_captured', { key: 'feed.aria.lead', params: { customer: who, interest: i.interest } }, {
+        entityType: 'lead', entityId: lead.id, minutesSaved: 5, channel: ctx.channel,
+        trace: {
+          agent: ctx.agent, customerId: cid, action: { key: 'why.action.aria.lead', params: { agent: await agentName(ctx.tx, ctx.agent), customer: who } },
+          trigger: ctx.agent === 'vox' ? { kind: 'inbound_call' } : { kind: 'inbound_message', ...(ctx.conversationId ? { ref: { type: 'conversation', id: ctx.conversationId } } : {}) },
+          approver: { kind: 'not_needed' },
+          facts: [fact('asked_about', 'why.fact.asked_about', { customer: who, interest: i.interest }, { type: 'customer', id: cid }), fact('not_now', 'why.fact.not_booking_now')],
+        },
+      });
       await ctx.services.nudge.onLeadCreated(ctx.tx, lead, ctx.now);
       return { ok: true };
     },

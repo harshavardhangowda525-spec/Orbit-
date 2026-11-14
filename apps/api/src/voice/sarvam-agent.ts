@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentTenant, Public, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { runTool, type ToolContext } from '../ai/tools';
+import { agentName, fact } from '../trust/trace';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { hashToken } from '../realtime/hash';
@@ -285,6 +286,14 @@ export class SarvamAgentService {
         const c = row.customer_id ? await tx.one(`SELECT name, phone FROM customers WHERE id = $1`, [row.customer_id]) : null;
         await postFeed(tx, 'vox', 'call_handled', { key: 'feed.vox.call', params: { customer: (c?.name ?? '').split(' ')[0] || c?.phone || call.caller || '—', minutes: Math.max(1, Math.round(seconds / 60)) } }, {
           entityType: 'call', entityId: row.id, minutesSaved: Math.max(2, Math.ceil(seconds / 60)), channel: 'phone',
+          trace: {
+            agent: 'vox', customerId: row.customer_id ?? null, action: { key: 'why.action.vox.answered', params: { agent: await agentName(tx, 'vox') } },
+            trigger: { kind: 'inbound_call' }, approver: { kind: 'not_needed' },
+            facts: [
+              fact('caller', 'why.fact.caller', { customer: (c?.name ?? '').split(' ')[0] || c?.phone || call.caller || '—' }, row.customer_id ? { type: 'customer', id: row.customer_id } : undefined),
+              fact('minutes', 'why.fact.call_minutes', { count: Math.max(1, Math.round(seconds / 60)) }),
+            ],
+          },
         });
       }
       liveToBusiness(tx, { type: 'call.ended', data: { conversationId: call.conversationId } });

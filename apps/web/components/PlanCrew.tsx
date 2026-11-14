@@ -120,6 +120,8 @@ export function PlanView() {
 
 interface CrewRow { agent: string; name: string; personality: string; enabled: boolean; permissions: Record<string, boolean> }
 const PERMS: Record<string, string[]> = { nudge: ['reviewRequests', 'renewals', 'followUps'], ledger: ['invoiceReminders'] };
+/** The rule each switch controls ("Change this rule" from a Why? sheet lands on it). */
+const PERM_RULE: Record<string, string> = { reviewRequests: 'nudge.review_request', renewals: 'nudge.renewal', followUps: 'nudge.follow_up', invoiceReminders: 'ledger.invoice_reminder' };
 
 /** One Crew member's settings: on/off, name, tone, and what it may do on its own. */
 export function CrewSettings({ agent }: { agent: string }) {
@@ -175,7 +177,7 @@ export function CrewSettings({ agent }: { agent: string }) {
         </label>
       </div>
       {(PERMS[agent] ?? []).map((k) => (
-        <label key={k} className="check-line">
+        <label key={k} className="check-line" data-rule={PERM_RULE[k]}>
           <input type="checkbox" checked={row.permissions?.[k] !== false} disabled={!row.enabled} onChange={(e) => patch({ permissions: { [k]: e.target.checked } })} />
           <span>{t(`crew.perm.${k}`)}</span>
         </label>

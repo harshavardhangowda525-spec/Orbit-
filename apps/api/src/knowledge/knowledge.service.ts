@@ -4,6 +4,7 @@ import type { Tx } from '../db/db.service';
 import { DbService } from '../db/db.service';
 import { CurrentTenant, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
+import { recordVersion, snapshot } from '../trust/versions';
 import { ZodPipe } from '../common/zod.pipe';
 import { notFound } from '../common/errors';
 
@@ -59,21 +60,26 @@ export class KnowledgeController {
   @Roles('owner', 'manager')
   @Post()
   create(@CurrentTenant() t: Tenant, @Body(new ZodPipe(Item)) b: z.infer<typeof Item>) {
-    return this.db.withTenant(t.businessId, (tx) =>
-      tx.one(`INSERT INTO knowledge_items (type, title, content, language, active, source, created_by) VALUES ($1,$2,$3,$4,$5,'owner',$6) RETURNING id`, [b.type, b.title, b.content, b.language, b.active, t.userId]),
-    );
+    return this.db.withTenant(t.businessId, async (tx) => {
+      const r = await tx.one(`INSERT INTO knowledge_items (type, title, content, language, active, source, created_by) VALUES ($1,$2,$3,$4,$5,'owner',$6) RETURNING id`, [b.type, b.title, b.content, b.language, b.active, t.userId]);
+      await recordVersion(tx, { entity: 'knowledge_item', id: r.id, label: { key: 'change.knowledge_added', params: { title: b.title } }, before: null, after: await snapshot(tx, 'knowledge_item', r.id), by: t.userId });
+      return r;
+    }, t.userId);
   }
 
   @Roles('owner', 'manager')
   @Patch(':id')
   async update(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(Item.partial())) b: Partial<z.infer<typeof Item>>) {
-    const r = await this.db.withTenant(t.businessId, (tx) =>
-      tx.one(
+    const r = await this.db.withTenant(t.businessId, async (tx) => {
+      const before = await snapshot(tx, 'knowledge_item', id);
+      const row = await tx.one(
         `UPDATE knowledge_items SET type = COALESCE($2, type), title = COALESCE($3, title), content = COALESCE($4, content), active = COALESCE($5, active)
-         WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
+         WHERE id = $1 AND deleted_at IS NULL RETURNING id, title`,
         [id, b.type ?? null, b.title ?? null, b.content ?? null, b.active ?? null],
-      ),
-    );
+      );
+      if (row) await recordVersion(tx, { entity: 'knowledge_item', id, label: { key: 'change.knowledge', params: { title: row.title } }, before, after: await snapshot(tx, 'knowledge_item', id), by: t.userId });
+      return row;
+    }, t.userId);
     if (!r) throw notFound();
     return r;
   }
@@ -81,7 +87,12 @@ export class KnowledgeController {
   @Roles('owner', 'manager')
   @Delete(':id')
   async remove(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string) {
-    const r = await this.db.withTenant(t.businessId, (tx) => tx.one(`UPDATE knowledge_items SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id]));
+    const r = await this.db.withTenant(t.businessId, async (tx) => {
+      const before = await snapshot(tx, 'knowledge_item', id);
+      const row = await tx.one(`UPDATE knowledge_items SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id, title`, [id]);
+      if (row) await recordVersion(tx, { entity: 'knowledge_item', id, label: { key: 'change.knowledge_removed', params: { title: row.title } }, before, after: await snapshot(tx, 'knowledge_item', id), by: t.userId });
+      return row;
+    }, t.userId);
     if (!r) throw notFound();
     return { ok: true };
   }

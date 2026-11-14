@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { AgentDot } from './Hero';
 import { timeAgo } from './Feed';
+import { openWhy } from '@/components/trust/WhySheet';
 
 export interface Decision {
   id: string;
@@ -17,6 +18,7 @@ export interface Decision {
   context: Record<string, any>;
   options: { key: string; label: string; style: string }[];
   createdAt: string;
+  traceId?: string | null;
 }
 
 /**
@@ -112,6 +114,7 @@ export function NeedsYou({ cards, onDecided, onOpen, dayName }: { cards: Decisio
                 {card.agentName}
                 {card.channel ? ` · ${t(`channel.${card.channel}`)}` : ''} · {timeAgo(card.createdAt, t)}
               </span>
+              <button className="why-link" style={{ marginLeft: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => openWhy(card.traceId ?? null)} data-testid="card-why">{t('why.link')}</button>
             </div>
             <Situation card={card} />
             <div className="actions">
@@ -132,7 +135,7 @@ export function NeedsYou({ cards, onDecided, onOpen, dayName }: { cards: Decisio
 function Situation({ card }: { card: Decision }) {
   const { t, ts } = useI18n();
   const c = card.context ?? {};
-  const preview = c.suggestedReply ?? c.sample ?? c.conversation ?? null;
+  const preview = c.suggestedReply ?? c.draft ?? c.sample ?? c.conversation ?? null;
   const suggestion = c.suggestion ?? (card.type === 'handover' ? t('needs.suggest.handover') : card.type === 'review_reply' ? t('needs.suggest.review') : card.type === 'discount' ? t('needs.suggest.discount') : null);
   return (
     <>

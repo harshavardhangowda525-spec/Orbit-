@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { addDays, findSlots, localParts, toE164, formatTime, type Interval, type Slot, type StaffAvailability, type WeeklyHours } from '@orbit/shared';
 import type { Tx } from '../db/db.service';
 import { AppError, badRequest, notFound } from '../common/errors';
+import { agentName, fact, firstName, type TraceInput } from '../trust/trace';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { hashToken } from '../realtime/hash';
@@ -179,12 +180,20 @@ export class BookingsService {
     const byAria = !!crewAgent;
     const channel = input.source.includes(':') ? input.source.split(':')[1] : input.source;
     const first = (customer.name ?? '').split(' ')[0] || customer.phone;
+    const at = slot.start.toISOString();
+    const by = crewAgent ?? (input.source === 'owner' ? 'owner' : 'customer');
     await postFeed(
       tx,
       crewAgent ?? 'orbit',
       'booking_created',
-      { key: byAria ? 'feed.aria.booked' : 'feed.orbit.booked', params: { customer: first, service: svc.name, time: `~t:${slot.start.toISOString()}`, channel: `@channel.${channel}` } },
-      { entityType: 'booking', entityId: booking.id, valueAmount: byAria ? Number(svc.price ?? 0) : 0, minutesSaved: byAria ? 6 : 0, channel },
+      { key: byAria ? 'feed.aria.booked' : 'feed.orbit.booked', params: { customer: first, service: svc.name, time: `~t:${at}`, channel: `@channel.${channel}` } },
+      {
+        entityType: 'booking', entityId: booking.id, valueAmount: byAria ? Number(svc.price ?? 0) : 0, minutesSaved: byAria ? 6 : 0, channel,
+        trace: await this.trace(tx, crewAgent ?? 'orbit', by, customer, { key: 'why.action.booking.created', params: { customer: first, service: svc.name } }, [
+          fact('chose_slot', by === 'owner' ? 'why.fact.owner_booked' : 'why.fact.customer_chose', { customer: first, service: svc.name, date: `~d:${at}`, time: `~t:${at}` }, { type: 'booking', id: booking.id }),
+          ...(slot.staffId && staffName ? [fact('staff_free', 'why.fact.staff_free', { staff: staffName })] : []),
+        ]),
+      },
     );
     liveToBusiness(tx, { type: 'booking.changed', data: { id: booking.id } });
     this.busyProvider?.onBookingChanged?.(tx, booking.id, 'created');
@@ -215,7 +224,20 @@ export class BookingsService {
     };
   }
 
-  async reschedule(tx: Tx, bookingId: string, start: Date, staffId: string | null | undefined, now = new Date()) {
+  /** Why a booking changed: who asked (a customer in chat or on the phone, the owner, or a rule) and the facts. */
+  private async trace(tx: Tx, agent: string, by: string, c: { id?: string } | null, action: TraceInput['action'], facts: TraceInput['facts']): Promise<TraceInput> {
+    const crew = agent === 'aria' || agent === 'vox';
+    return {
+      agent, customerId: c?.id ?? null,
+      action: crew ? { ...action, key: `${action.key}_by`, params: { ...action.params, agent: await agentName(tx, agent) } } : action,
+      trigger: by === 'vox' ? { kind: 'inbound_call' } : by === 'aria' || by === 'customer' ? { kind: 'inbound_message' } : by === 'rule' ? { kind: 'schedule' } : { kind: 'owner_decision' },
+      approver: by === 'owner' ? { kind: 'owner' } : by === 'rule' ? { kind: 'auto_rule' } : { kind: 'not_needed' },
+      ...(by === 'rule' ? { rule: { code: 'ledger.deposit_deadline', label: { key: 'why.rule.ledger.deposit_deadline' }, setting: '/bridge?view=money' } } : {}),
+      facts,
+    };
+  }
+
+  async reschedule(tx: Tx, bookingId: string, start: Date, staffId: string | null | undefined, now = new Date(), by: 'customer' | 'owner' | 'aria' | 'vox' = 'owner') {
     await this.lock(tx);
     const bk = await tx.one(`SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [bookingId]);
     if (!bk || !['pending', 'confirmed'].includes(bk.status)) throw notFound('That booking cannot be changed.');
@@ -235,19 +257,35 @@ export class BookingsService {
       throw e;
     }
     await this.nudge.onBookingScheduled(tx, updated, now);
-    const c = await tx.one(`SELECT name FROM customers WHERE id = $1`, [bk.customer_id]);
-    await postFeed(tx, 'orbit', 'booking_moved', { key: 'feed.orbit.booking_moved', params: { customer: (c?.name ?? '').split(' ')[0], time: `~t:${slot.start.toISOString()}` } }, { entityType: 'booking', entityId: bk.id });
+    const c = await tx.one(`SELECT id, name, phone FROM customers WHERE id = $1`, [bk.customer_id]);
+    const who = firstName(c);
+    await postFeed(tx, 'orbit', 'booking_moved', { key: 'feed.orbit.booking_moved', params: { customer: (c?.name ?? '').split(' ')[0], time: `~t:${slot.start.toISOString()}` } }, {
+      entityType: 'booking', entityId: bk.id,
+      trace: await this.trace(tx, by === 'aria' || by === 'vox' ? by : 'orbit', by, c, { key: 'why.action.booking.moved', params: { customer: who } }, [
+        fact('was_at', 'why.fact.was_at', { date: `~d:${new Date(bk.start_at).toISOString()}`, time: `~t:${new Date(bk.start_at).toISOString()}` }, { type: 'booking', id: bk.id }),
+        fact('moved_to', by === 'owner' ? 'why.fact.owner_moved_to' : 'why.fact.customer_moved_to', { customer: who, date: `~d:${slot.start.toISOString()}`, time: `~t:${slot.start.toISOString()}` }),
+      ]),
+    });
     liveToBusiness(tx, { type: 'booking.changed', data: { id: bk.id } });
     this.busyProvider?.onBookingChanged?.(tx, bk.id, 'moved');
     return updated;
   }
 
-  async cancel(tx: Tx, bookingId: string, reason: string, by: 'customer' | 'owner' | 'aria') {
+  async cancel(tx: Tx, bookingId: string, reason: string, by: 'customer' | 'owner' | 'aria' | 'vox') {
     const bk = await tx.one(`UPDATE bookings SET status = 'cancelled', cancelled_reason = $2 WHERE id = $1 AND status IN ('pending', 'confirmed') RETURNING *`, [bookingId, reason]);
     if (!bk) throw notFound('That booking is already cancelled or finished.');
     await this.nudge.cancelForBooking(tx, bk.id, 'booking_cancelled');
-    const c = await tx.one(`SELECT name FROM customers WHERE id = $1`, [bk.customer_id]);
-    await postFeed(tx, by === 'aria' ? 'aria' : 'orbit', 'booking_cancelled', { key: 'feed.orbit.booking_cancelled', params: { customer: (c?.name ?? '').split(' ')[0], time: `~t:${new Date(bk.start_at).toISOString()}` } }, { entityType: 'booking', entityId: bk.id });
+    const c = await tx.one(`SELECT id, name, phone FROM customers WHERE id = $1`, [bk.customer_id]);
+    const agent = by === 'aria' || by === 'vox' ? by : 'orbit';
+    const when = new Date(bk.start_at).toISOString();
+    const reasonFact = reason === 'deposit_not_paid' ? fact('deposit', 'why.fact.deposit_not_paid') : fact('asked', by === 'owner' ? 'why.fact.owner_cancelled' : 'why.fact.customer_cancelled', { customer: firstName(c) });
+    await postFeed(tx, agent, 'booking_cancelled', { key: 'feed.orbit.booking_cancelled', params: { customer: (c?.name ?? '').split(' ')[0], time: `~t:${when}` } }, {
+      entityType: 'booking', entityId: bk.id,
+      trace: await this.trace(tx, agent, reason === 'deposit_not_paid' ? 'rule' : by, c, { key: 'why.action.booking.cancelled', params: { customer: firstName(c) } }, [
+        fact('was_at', 'why.fact.was_at', { date: `~d:${when}`, time: `~t:${when}` }, { type: 'booking', id: bk.id }),
+        reasonFact,
+      ]),
+    });
     liveToBusiness(tx, { type: 'booking.changed', data: { id: bk.id } });
     this.busyProvider?.onBookingChanged?.(tx, bk.id, 'cancelled');
     return bk;

@@ -853,6 +853,11 @@ k('plan.better_ai','Our most capable Orbit AI','हमारा सबसे स
 k('plan.custom','Talk to us','हमसे बात करें','ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ')
 k('plan.custom_price','Custom pricing','कस्टम कीमत','ಕಸ್ಟಮ್ ಬೆಲೆ')
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import locales_trust
+locales_trust.add(k)
+
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}
   json.dump(d, open(f'{out}/{lang}.json','w'), ensure_ascii=False, indent=1)

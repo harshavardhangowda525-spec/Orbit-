@@ -4,6 +4,7 @@ import type { Tx } from '../db/db.service';
 import { postFeed } from '../common/feed';
 import { liveToBusiness, liveToConversation } from '../realtime/live';
 import { badRequest, notFound } from '../common/errors';
+import { agentName, fact, recordTrace } from '../trust/trace';
 
 /** Conversation state changes shared by Aria, the inbox and the public chat. */
 @Injectable()
@@ -45,9 +46,17 @@ export class ConversationsService {
     if (!conv) return;
     const c = conv.customer_id ? await tx.one(`SELECT name, phone FROM customers WHERE id = $1`, [conv.customer_id]) : null;
     const who = (c?.name ?? '').split(' ')[0] || c?.phone || null;
+    // Why Aria passed it on: the customer's chat and Aria's recorded reason.
+    const traceId = await recordTrace(tx, {
+      agent: 'aria', customerId: conv.customer_id ?? null,
+      action: { key: who ? 'why.action.aria.handover' : 'why.action.aria.handover_visitor', params: { agent: await agentName(tx, 'aria'), customer: who ?? '' } },
+      trigger: { kind: 'inbound_message', ref: { type: 'conversation', id: conversationId } },
+      approver: { kind: 'not_needed' },
+      facts: [fact('reason', 'why.fact.handover_reason', { reason: reason.length > 140 ? `${reason.slice(0, 137)}…` : reason }, { type: 'conversation', id: conversationId })],
+    });
     await tx.q(
-      `INSERT INTO approval_cards (agent_key, type, title, context, options, default_option, expires_at)
-       VALUES ('aria', 'handover', $1, $2, $3, 'aria', now() + interval '12 hours')`,
+      `INSERT INTO approval_cards (agent_key, type, title, context, options, default_option, expires_at, trace_id)
+       VALUES ('aria', 'handover', $1, $2, $3, 'aria', now() + interval '12 hours', $4)`,
       [
         JSON.stringify({ key: who ? 'card.handover' : 'card.handover_visitor', params: { customer: who ?? '', reason } }),
         JSON.stringify({ conversationId, reason, channel: conv.channel }),
@@ -55,13 +64,14 @@ export class ConversationsService {
           { key: 'reply_myself', label: 'card.option.reply_myself', style: 'primary', outcome: 'edited' },
           { key: 'aria', label: 'card.option.let_aria', style: 'secondary', outcome: 'rejected' },
         ]),
+        traceId,
       ],
     );
     await tx.q(
       `INSERT INTO notifications (user_id, type, title, link) VALUES (NULL, 'handover', $1, $2)`,
       [JSON.stringify(who ? { key: 'notify.handover', params: { customer: who } } : { key: 'notify.handover_visitor', params: {} }), `/inbox/${conversationId}`],
     );
-    await postFeed(tx, 'aria', 'handover', who ? { key: 'feed.aria.handover', params: { customer: who } } : { key: 'feed.aria.handover_visitor', params: {} }, { entityType: 'conversation', entityId: conversationId, channel: conv.channel });
+    await postFeed(tx, 'aria', 'handover', who ? { key: 'feed.aria.handover', params: { customer: who } } : { key: 'feed.aria.handover_visitor', params: {} }, { entityType: 'conversation', entityId: conversationId, channel: conv.channel, trace: traceId });
     liveToBusiness(tx, { type: 'card.new' });
     liveToBusiness(tx, { type: 'notification.new' });
     liveToBusiness(tx, { type: 'conversation.updated', data: { id: conversationId } });

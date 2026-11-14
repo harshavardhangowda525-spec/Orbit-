@@ -11,7 +11,9 @@ import { useSession } from '@/lib/session';
 import { useLive, ownerLiveQuery } from '@/lib/live';
 import { useCountUp, useIntroOnce, usePageVisible } from '@/lib/motion';
 import { AppNav } from '@/components/AppNav';
-import { CommandBar, type OrbitScreen } from '@/components/CommandBar';
+import { CommandBar, prefillCommand, type OrbitScreen } from '@/components/CommandBar';
+import { UndoBar } from '@/components/trust/UndoBar';
+import { WhySheetHost } from '@/components/trust/WhySheet';
 import { MoneyView } from '@/components/MoneyView';
 import { PlanView } from '@/components/PlanCrew';
 import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
@@ -39,9 +41,15 @@ function Bridge() {
   const [data, setData] = useState<BridgeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>((VIEWS as readonly string[]).includes(params.get('view') ?? '') ? (params.get('view') as View) : 'today');
-  const [agent, setAgent] = useState<string | null>(null);
+  const [agent, setAgent] = useState<string | null>(params.get('agent'));
   const visible = usePageVisible();
   const intro = useIntroOnce('orbit.bridge.intro', !!data);
+  // Links within the app (e.g. "Change this rule" from a Why? sheet) change the URL without remounting.
+  useEffect(() => {
+    const v = params.get('view');
+    if (v && (VIEWS as readonly string[]).includes(v)) setView(v as View);
+    if (params.get('agent')) setAgent(params.get('agent'));
+  }, [params]);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const refetch = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -149,7 +157,7 @@ function Bridge() {
         <Today data={data} intro={intro} running={visible} names={names} dayName={dayName} reload={load} openEntity={openEntity}
           onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} openScreen={openScreen} />
       )}
-      {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} />}
+      {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} highlight={params.get('highlight') ?? (params.get('section') === 'safety' ? 'safety' : null)} />}
       {/* These load business data, so they wait until The Bridge (and the chosen business) is ready. */}
       {data && view === 'people' && <PeopleView />}
       {data && view === 'money' && <MoneyView />}
@@ -158,6 +166,8 @@ function Bridge() {
       {data && view === 'details' && <DetailsView />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}
       {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} /></div>}
+      {data && <UndoBar held={data.held ?? []} onChanged={load} onEditAgain={(text) => prefillCommand(text)} />}
+      <WhySheetHost />
     </main>
   );
 }

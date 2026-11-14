@@ -187,7 +187,7 @@ export class PublicBookingController {
     const businessId = await this.manageCtx(token);
     return this.db.withTenant(businessId, async (tx) => {
       const bk = await this.changeAllowed(tx, token);
-      const r = await this.bookings.reschedule(tx, bk.id, new Date(b.start), undefined);
+      const r = await this.bookings.reschedule(tx, bk.id, new Date(b.start), undefined, new Date(), 'customer');
       return { ok: true, start: r.start_at };
     });
   }

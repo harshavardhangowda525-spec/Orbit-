@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { translate, type BusinessType } from '@orbit/shared';
-import { DbService } from '../db/db.service';
+import { DbService, type Tx } from '../db/db.service';
+import { agentName, fact, firstName, recordTrace } from '../trust/trace';
 import { TemplatesService } from '../templates/templates.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { BookingsService } from '../bookings/bookings.service';
@@ -147,13 +148,52 @@ export class AriaService {
   }
 
   private async finish(businessId: string, conversationId: string, agentKey: string, text: string, o: { handover?: string; failure?: boolean }): Promise<AriaResult> {
-    await this.db.withTenant(businessId, async (tx) => {
+    const held = await this.db.withTenant(businessId, async (tx) => {
+      // "Review before sending" (Crew → Safety): the owner approves Aria's reply on this channel first.
+      if (!o.handover && !o.failure && agentKey === 'aria' && (await this.reviewFirst(tx, conversationId, text))) return true;
       await this.conversations.addMessage(tx, conversationId, { direction: 'out', sender: agentKey, body: text });
       if (o.failure) await tx.q(`UPDATE conversations SET ai_failures = ai_failures + 1 WHERE id = $1`, [conversationId]);
       if (o.handover) await this.conversations.handover(tx, conversationId, o.handover);
       else await tx.q(`UPDATE conversations SET ai_failures = 0 WHERE id = $1`, [conversationId]);
+      return false;
     });
+    if (held) return { replied: false, reason: 'review_before_send' };
     return { replied: true, text, handover: !!o.handover, reason: o.handover };
+  }
+
+  /** If the owner reviews replies on this channel, Aria's draft becomes a Needs You card instead of a message. */
+  private async reviewFirst(tx: Tx, conversationId: string, draft: string) {
+    const r = await tx.one(
+      `SELECT cv.channel, cv.customer_id, p.review_before_send AS review FROM conversations cv JOIN business_profiles p ON p.business_id = cv.business_id WHERE cv.id = $1`,
+      [conversationId],
+    );
+    if (!r || r.channel === 'phone' || r.review?.[r.channel] !== true) return false;
+    const c = r.customer_id ? await tx.one(`SELECT name, phone FROM customers WHERE id = $1`, [r.customer_id]) : null;
+    const who = firstName(c);
+    const traceId = await recordTrace(tx, {
+      agent: 'aria', customerId: r.customer_id ?? null,
+      action: { key: 'why.action.aria.drafted', params: { agent: await agentName(tx, 'aria'), customer: who } },
+      trigger: { kind: 'inbound_message', ref: { type: 'conversation', id: conversationId } }, approver: { kind: 'owner' },
+      rule: { code: 'safety.review_before_send', label: { key: 'why.rule.safety.review_before_send' }, setting: '/bridge?view=crew&section=safety' },
+      facts: [fact('channel', 'why.fact.review_on', { channel: `@channel.${r.channel}` })],
+    });
+    await tx.q(
+      `INSERT INTO approval_cards (agent_key, type, title, context, suggested_action, options, default_option, expires_at, trace_id)
+       VALUES ('aria', 'reply_review', $1, $2, $3, $4, 'no', now() + interval '12 hours', $5)`,
+      [
+        JSON.stringify({ key: 'card.reply_review', params: { customer: who } }),
+        JSON.stringify({ conversationId, draft, channel: r.channel }),
+        JSON.stringify({ text: draft }),
+        JSON.stringify([
+          { key: 'send', label: 'card.option.send', style: 'primary', outcome: 'approved' },
+          { key: 'edit', label: 'card.option.reply_myself', style: 'secondary', outcome: 'edited' },
+          { key: 'no', label: 'card.option.dont_send', style: 'ghost', outcome: 'rejected' },
+        ]),
+        traceId,
+      ],
+    );
+    liveToBusiness(tx, { type: 'card.new' });
+    return true;
   }
 }
 

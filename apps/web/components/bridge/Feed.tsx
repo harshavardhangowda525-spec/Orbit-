@@ -5,6 +5,7 @@ import type { Sentence } from '@orbit/shared';
 import { useI18n } from '@/lib/i18n';
 import { useCountUp } from '@/lib/motion';
 import { AgentDot } from './Hero';
+import { openWhy } from '@/components/trust/WhySheet';
 
 export function timeAgo(iso: string, t: (k: string, p?: Record<string, string | number>) => string) {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
@@ -22,7 +23,8 @@ export interface FeedGroup {
   at: string;
   channel: string | null;
   sentence: Sentence;
-  items: { id: string; sentence: Sentence; at: string; entityType: string | null; entityId: string | null }[];
+  items: { id: string; sentence: Sentence; at: string; entityType: string | null; entityId: string | null; traceId?: string | null }[];
+  traceId?: string | null;
 }
 
 const AGENT_NAMES: Record<string, string> = { aria: 'Aria', vox: 'Vox', nudge: 'Nudge', ledger: 'Ledger', spark: 'Spark', orbit: 'Orbit' };
@@ -49,7 +51,7 @@ export function CrewFeed({ groups, names, animate, onOpen }: { groups: FeedGroup
             const many = g.items.length > 1;
             const name = names[g.agent] ?? AGENT_NAMES[g.agent] ?? g.agent;
             return (
-              <li key={g.id} className={`${fresh.has(g.id) ? 'new' : ''} ${animate ? 'rise' : ''}`} style={{ ['--d' as any]: `${0.45 + i * 0.1}s` }}>
+              <li key={g.id} data-type={g.type} className={`${fresh.has(g.id) ? 'new' : ''} ${animate ? 'rise' : ''}`} style={{ ['--d' as any]: `${0.45 + i * 0.1}s` }}>
                 <button className="rowbtn" onClick={() => (many ? setOpen(open === g.id ? null : g.id) : onOpen(g.items[0]))} aria-expanded={many ? open === g.id : undefined}>
                   <AgentDot agent={g.agent} />
                   <span className="grow">
@@ -59,12 +61,20 @@ export function CrewFeed({ groups, names, animate, onOpen }: { groups: FeedGroup
                     </span>
                   </span>
                 </button>
+                {!many && g.type !== 'held_cancelled' && (
+                  <button className="why-link feed-why" onClick={() => openWhy(g.items[0].traceId ?? null)} aria-label={`${t('why.link')} ${ts(g.sentence)}`} data-testid="feed-why">
+                    {t('why.link')}
+                  </button>
+                )}
                 {many && open === g.id && (
                   <div className="sub">
                     {g.items.map((it) => (
-                      <button key={it.id} className="link-btn" style={{ textAlign: 'left', fontWeight: 600, minHeight: 36, padding: 0, color: 'var(--muted)' }} onClick={() => onOpen(it)}>
-                        {ts(it.sentence)}
-                      </button>
+                      <span key={it.id} className="row" style={{ alignItems: 'center', gap: 4 }}>
+                        <button className="link-btn" style={{ textAlign: 'left', fontWeight: 600, minHeight: 36, padding: 0, color: 'var(--muted)' }} onClick={() => onOpen(it)}>
+                          {ts(it.sentence)}
+                        </button>
+                        <button className="why-link" onClick={() => openWhy(it.traceId ?? null)}>{t('why.link')}</button>
+                      </span>
                     ))}
                   </div>
                 )}

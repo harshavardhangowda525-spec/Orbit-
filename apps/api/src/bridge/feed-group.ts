@@ -9,6 +9,8 @@ export interface FeedItem {
   entityType: string | null;
   entityId: string | null;
   valueAmount: number;
+  /** The stored reasons ("Why?"), when this action recorded them. */
+  traceId?: string | null;
 }
 
 export interface FeedGroup {

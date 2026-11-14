@@ -3,6 +3,7 @@ import { localParts } from '@orbit/shared';
 import { DbService } from '../db/db.service';
 import { JobsService } from '../jobs/jobs.service';
 import { BridgeService } from '../bridge/bridge.service';
+import { fact } from '../trust/trace';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { BridgeModule } from '../bridge/bridge.module';
@@ -45,7 +46,15 @@ export class BriefingService implements OnModuleInit {
         [date, type, JSON.stringify(content)],
       );
       if (!row) return null; // already generated today
-      await postFeed(tx, 'orbit', 'briefing_ready', { key: type === 'morning' ? 'feed.orbit.morning_briefing' : 'feed.orbit.evening_summary' }, { entityType: 'briefing', entityId: row.id });
+      await postFeed(tx, 'orbit', 'briefing_ready', { key: type === 'morning' ? 'feed.orbit.morning_briefing' : 'feed.orbit.evening_summary' }, {
+        entityType: 'briefing', entityId: row.id,
+        trace: {
+          agent: 'orbit', action: { key: type === 'morning' ? 'why.action.orbit.morning_briefing' : 'why.action.orbit.evening_summary' },
+          trigger: { kind: 'schedule' }, approver: { kind: 'not_needed' },
+          rule: { code: `orbit.${type}_briefing`, label: { key: `why.rule.orbit.${type}_briefing` }, setting: '/bridge?view=details' },
+          facts: [fact('bookings', 'why.fact.bookings_today', { count: Number(home.pulse.numbers.bookingsToday ?? 0) }), fact('waiting', 'why.fact.decisions_waiting', { count: home.needsYou.length })],
+        },
+      });
       await tx.q(`INSERT INTO notifications (user_id, type, title, link, channels_sent) VALUES (NULL, 'briefing', $1, '/bridge', ARRAY['app'])`, [
         JSON.stringify({ key: type === 'morning' ? 'notify.morning_briefing' : 'notify.evening_summary' }),
       ]);

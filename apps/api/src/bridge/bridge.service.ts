@@ -7,6 +7,7 @@ import { liveToBusiness } from '../realtime/live';
 import { ConversationsService } from '../inbox/conversations.service';
 import { UsageService } from '../billing/usage.service';
 import { groupFeed, type FeedItem } from './feed-group';
+import { HoldService } from '../trust/hold.service';
 
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -16,7 +17,7 @@ export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour 
 
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService) {}
 
   /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
   async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
@@ -79,7 +80,7 @@ export class BridgeService {
       await this.snapshotPulse(tx, pulse.score, pulse.sentence, s);
 
       const cards = await this.cards(tx, names);
-      const feedRows = await tx.q(`SELECT id, agent_key, event_type, sentence, at, entity_type, entity_id, value_amount, channel FROM feed_events ORDER BY at DESC LIMIT 40`);
+      const feedRows = await tx.q(`SELECT id, agent_key, event_type, sentence, at, entity_type, entity_id, value_amount, channel, trace_id FROM feed_events ORDER BY at DESC LIMIT 40`);
       const feedItems: (FeedItem & { channel: string | null })[] = feedRows.map((r) => ({
         id: r.id,
         agent: r.agent_key,
@@ -90,6 +91,7 @@ export class BridgeService {
         entityId: r.entity_id,
         valueAmount: num(r.value_amount),
         channel: r.channel,
+        traceId: r.trace_id,
       }));
 
       // What the Crew is doing right now (drives agent pings and the live ticker).
@@ -144,7 +146,8 @@ export class BridgeService {
         pulse: { ...pulse, numbers: { moneyToday: num(s.money_today), bookingsToday: num(s.bookings_today), needYou: cards.length, peopleWaiting: num(s.people_waiting) } },
         briefing,
         needsYou: cards,
-        feed: groupFeed(feedItems, names).map((g) => ({ ...g, channel: (g.items[0] as any).channel ?? null })),
+        feed: groupFeed(feedItems, names).map((g) => ({ ...g, channel: (g.items[0] as any).channel ?? null, traceId: g.items.length === 1 ? (g.items[0].traceId ?? null) : null })),
+        held: await this.hold.list(tx),
         ticker,
         earnings: { total: byAgent.reduce((a, r) => a + r.value, 0), minutesSaved: byAgent.reduce((a, r) => a + r.minutes, 0), byAgent },
         crew: agents.map((a) => ({ agent: a.agent_key, name: a.display_name, enabled: a.enabled, working: working.has(a.agent_key) })),
@@ -170,7 +173,7 @@ export class BridgeService {
 
   private async cards(tx: Tx, names: Record<string, string>) {
     const rows = await tx.q(
-      `SELECT id, agent_key, type, title, context, suggested_action, options, expires_at, created_at
+      `SELECT id, agent_key, type, title, context, suggested_action, options, expires_at, created_at, trace_id
        FROM approval_cards WHERE status = 'pending' ORDER BY created_at DESC LIMIT 20`,
     );
     return rows.map((r) => ({
@@ -185,6 +188,7 @@ export class BridgeService {
       options: r.options,
       expiresAt: r.expires_at,
       createdAt: r.created_at,
+      traceId: r.trace_id,
     }));
   }
 
@@ -214,6 +218,13 @@ export class BridgeService {
         await this.usage.decideResume(tx, card.context?.conversationIds ?? [], option.outcome === 'approved');
       } else if (card.type === 'discount' && option.outcome === 'edited' && card.context?.conversationId) {
         open = `/inbox/${card.context.conversationId}`;
+      } else if (card.type === 'correction' && option.outcome === 'approved') {
+        // The correction goes through the same Undo window.
+        await this.hold.sendCorrection(tx, card, userId);
+      } else if (card.type === 'reply_review' && card.context?.conversationId) {
+        // "Review before sending": Aria's draft goes out only when the owner says so.
+        if (option.outcome === 'approved') await this.conversations.addMessage(tx, card.context.conversationId, { direction: 'out', sender: card.agent_key, body: card.context.draft });
+        else if (option.outcome === 'edited') open = `/inbox/${card.context.conversationId}`;
       }
       if (card.task_id) {
         const next = option.outcome === 'approved' ? 'queued' : 'cancelled';

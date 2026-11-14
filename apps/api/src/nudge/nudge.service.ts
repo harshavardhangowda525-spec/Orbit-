@@ -7,6 +7,7 @@ import { JobsService } from '../jobs/jobs.service';
 import { ChannelsService } from '../channels/channels.service';
 import { postFeed } from '../common/feed';
 import { logger } from '../logger';
+import { agentName, fact, firstName as first, hasException, type TraceInput } from '../trust/trace';
 
 const MIN = 60_000;
 
@@ -175,6 +176,9 @@ export class NudgeService implements OnModuleInit {
       const b = await this.biz(tx);
       const c = await tx.one(`SELECT * FROM customers WHERE id = $1 AND deleted_at IS NULL`, [m.customer_id]);
       if (!c) return done('cancelled', 'customer_deleted');
+      // "Don't do this again for {customer}" (from the Why? sheet).
+      const ruleCode = `nudge.${m.kind}`;
+      if (await hasException(tx, c.id, ruleCode)) return done('skipped', 'owner_exception');
 
       // The owner's Crew settings: an agent that is switched off sends nothing; some kinds can be turned off on their own.
       const agent = await tx.one(`SELECT enabled, auto_approval_rules AS rules FROM agents WHERE agent_key = $1`, [m.agent_key]);
@@ -241,18 +245,47 @@ export class NudgeService implements OnModuleInit {
       if (!r.delivered) return done('skipped', r.reason ?? 'no_channel_connected');
       await tx.q(`INSERT INTO contact_log (customer_id, channel, agent_key, at) VALUES ($1, $2, $3, $4)`, [c.id, r.channel, m.agent_key, now]);
       const firstName = (c.name ?? '').split(' ')[0] || c.phone || '';
+      const trace = await this.trace(tx, m, c, booking, lead, ruleCode);
       if (m.kind === 'reminder') {
-        await postFeed(tx, 'nudge', 'reminder_sent', { key: 'feed.nudge.reminder_sent', params: { customer: firstName, service: booking?.service ?? '' } }, { entityType: 'booking', entityId: booking?.id, minutesSaved: 2, channel: r.channel ?? undefined });
+        await postFeed(tx, 'nudge', 'reminder_sent', { key: 'feed.nudge.reminder_sent', params: { customer: firstName, service: booking?.service ?? '' } }, { entityType: 'booking', entityId: booking?.id, minutesSaved: 2, channel: r.channel ?? undefined, trace });
       } else if (m.kind === 'follow_up') {
         if (lead?.status === 'new') await tx.q(`UPDATE leads SET status = 'contacted' WHERE id = $1`, [lead.id]);
-        await postFeed(tx, 'nudge', 'follow_up_sent', { key: 'feed.nudge.follow_up_sent', params: { customer: firstName } }, { entityType: 'lead', entityId: lead?.id, minutesSaved: 3, channel: r.channel ?? undefined });
+        await postFeed(tx, 'nudge', 'follow_up_sent', { key: 'feed.nudge.follow_up_sent', params: { customer: firstName } }, { entityType: 'lead', entityId: lead?.id, minutesSaved: 3, channel: r.channel ?? undefined, trace });
       } else if (m.kind === 'renewal') {
-        await postFeed(tx, 'nudge', 'renewal_sent', { key: 'feed.nudge.renewal_sent', params: { customer: firstName, service: booking?.service ?? '' } }, { entityType: 'customer', entityId: c.id, minutesSaved: 3, channel: r.channel ?? undefined });
+        await postFeed(tx, 'nudge', 'renewal_sent', { key: 'feed.nudge.renewal_sent', params: { customer: firstName, service: booking?.service ?? '' } }, { entityType: 'customer', entityId: c.id, minutesSaved: 3, channel: r.channel ?? undefined, trace });
       } else {
-        await postFeed(tx, 'nudge', 'review_request_sent', { key: 'feed.nudge.review_request', params: { customer: firstName } }, { entityType: 'customer', entityId: c.id, minutesSaved: 2, channel: r.channel ?? undefined });
+        await postFeed(tx, 'nudge', 'review_request_sent', { key: 'feed.nudge.review_request', params: { customer: firstName } }, { entityType: 'customer', entityId: c.id, minutesSaved: 2, channel: r.channel ?? undefined, trace });
       }
       return done('sent', null, { channel: r.channel, body });
     });
+  }
+
+  /** Why Nudge sent this message: the rule (sequence) and the facts it checked. */
+  private async trace(tx: Tx, m: any, c: any, booking: any, lead: any, ruleCode: string): Promise<TraceInput> {
+    const seq = m.sequence_id ? await tx.one(`SELECT name FROM sequences WHERE id = $1`, [m.sequence_id]) : null;
+    const who = first(c);
+    const facts = [];
+    if (m.kind === 'reminder' && booking) {
+      facts.push(fact('booking_at', 'why.fact.booking_at', { customer: who, service: booking.service ?? '', date: `~d:${new Date(booking.start_at).toISOString()}`, time: `~t:${new Date(booking.start_at).toISOString()}` }, { type: 'booking', id: booking.id }));
+    } else if (m.kind === 'follow_up' && lead) {
+      facts.push(fact('lead_open', 'why.fact.lead_open', { customer: who, interest: lead.interest ?? '', date: `~d:${new Date(lead.created_at).toISOString()}` }, { type: 'customer', id: c.id }));
+      if (m.step_index > 0) facts.push(fact('no_reply', 'why.fact.no_reply', { count: m.step_index }));
+    } else if (m.kind === 'renewal' && booking) {
+      facts.push(fact('last_visit', 'why.fact.last_visit', { customer: who, service: booking.service ?? '', date: `~d:${new Date(booking.end_at).toISOString()}` }, { type: 'customer', id: c.id }));
+      facts.push(fact('not_rebooked', 'why.fact.not_rebooked'));
+    } else if (booking) {
+      facts.push(fact('visit_done', 'why.fact.visit_done', { customer: who, service: booking.service ?? '', date: `~d:${new Date(booking.end_at).toISOString()}` }, { type: 'customer', id: c.id }));
+      facts.push(fact('not_asked', 'why.fact.not_asked_recently'));
+    }
+    return {
+      agent: m.agent_key,
+      customerId: c.id,
+      action: { key: `why.action.${ruleCode}`, params: { agent: await agentName(tx, m.agent_key), customer: who } },
+      trigger: { kind: 'sequence_rule' },
+      rule: { code: ruleCode, label: seq ? { key: 'why.rule.name', params: { name: seq.name } } : { key: `why.rule.${ruleCode}` }, setting: `/bridge?view=crew&agent=${m.agent_key}` },
+      facts,
+      approver: { kind: 'auto_rule' },
+    };
   }
 }
 

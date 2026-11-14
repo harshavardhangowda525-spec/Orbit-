@@ -12,3 +12,4 @@ apps/web/playwright-report/
 next-env.d.ts
 dump.rdb
 .sandbox-ca.crt
+__pycache__/

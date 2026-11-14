@@ -4,6 +4,8 @@ import { formatMoney, formatTime, type Sentence } from '@orbit/shared';
 import { DbService, type Tx } from '../db/db.service';
 import { ChannelsService } from '../channels/channels.service';
 import { postFeed } from '../common/feed';
+import { agentName, fact, firstName } from '../trust/trace';
+import { HoldService } from '../trust/hold.service';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
 import { UsageService } from '../billing/usage.service';
@@ -14,6 +16,7 @@ export type AssistantEvent =
   | { type: 'step'; label: Sentence }
   | { type: 'open'; screen: Screen; id?: string }
   | { type: 'reply'; text: string; taskId: string }
+  | { type: 'held'; id: string; holdUntil: string }
   | { type: 'error'; message: Sentence };
 
 export const SCREENS = ['today', 'crew', 'people', 'money', 'powers', 'details', 'inbox', 'conversation'] as const;
@@ -27,6 +30,9 @@ export interface AssistantInput {
 
 interface Ctx {
   tx: Tx;
+  userId: string;
+  taskId: string;
+  command: string;
   language: string;
   tz: string;
   currency: string;
@@ -182,9 +188,32 @@ const OWNER_TOOLS = {
       return { shown: i.screen };
     },
   }),
+  message_group: tool({
+    description:
+      "Send the same message to a group of customers (e.g. everyone booked tomorrow, or customers who owe money). First call with confirmed=false to get a preview (how many people, sample names, channel, cost) and show it to the owner; only call again with confirmed=true after the owner clearly says yes. It waits 2 minutes before sending so the owner can press Undo. Write {{name}} where each customer's first name should go.",
+    input: z.object({
+      audience: z.enum(['booked_today', 'booked_tomorrow', 'unpaid', 'recent_customers', 'customer_ids']),
+      customer_ids: z.array(z.string().uuid()).max(500).optional(),
+      text: z.string().trim().min(1).max(1000),
+      confirmed: z.boolean(),
+    }),
+    schema: obj(
+      {
+        audience: { type: 'string', enum: ['booked_today', 'booked_tomorrow', 'unpaid', 'recent_customers', 'customer_ids'], description: 'recent_customers = visited in the last 90 days' },
+        customer_ids: { type: 'array', items: uuid, description: 'Only for audience=customer_ids' },
+        text: { type: 'string', description: 'The exact message. {{name}} becomes the first name.' },
+        confirmed: { type: 'boolean', description: 'false = preview only; true = the owner said yes' },
+      },
+      ['audience', 'text', 'confirmed'],
+    ),
+    // Runs through AssistantService.messageGroup (needs the hold service).
+    async run() {
+      return { error: 'unavailable' };
+    },
+  }),
   message_customer: tool({
     description:
-      'Send a message to one customer on their best channel (WhatsApp, SMS, email or website chat). Only when the owner asked for it; if they did not give the exact words, propose the text and ask them to confirm first.',
+      'Send a message to one customer on their best channel (WhatsApp, SMS, email or website chat). Only when the owner asked for it; if they did not give the exact words, propose the text and ask them to confirm first. It waits 30 seconds before sending so the owner can press Undo.',
     input: z.object({ customer_id: z.string().uuid(), text: z.string().trim().min(1).max(1000) }),
     schema: obj({ customer_id: uuid, text: { type: 'string', description: 'The exact message to send' } }, ['customer_id', 'text']),
     // Runs through AssistantService.messageCustomer (needs the channel router).
@@ -213,6 +242,7 @@ export class AssistantService {
     private readonly ai: AiService,
     private readonly channels: ChannelsService,
     private readonly usage: UsageService,
+    private readonly hold: HoldService,
   ) {}
 
   async run(businessId: string, userId: string, input: AssistantInput, emit: (e: AssistantEvent) => void): Promise<void> {
@@ -247,6 +277,7 @@ export class AssistantService {
     ].join('\n');
 
     const messages: AiMessage[] = toMessages(input.history, input.text);
+    const usedTools: string[] = [];
     let reply = '';
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
@@ -265,8 +296,9 @@ export class AssistantService {
         for (const call of calls) {
           const name = call.name as ToolName;
           const params = (call.input ?? {}) as Record<string, unknown>;
+          if (OWNER_TOOLS[name] && !['open_screen', 'message_customer', 'message_group'].includes(name)) usedTools.push(name);
           emit({ type: 'step', label: name === 'open_screen' ? { key: 'assistant.step.open_screen', params: { screen: SCREEN_LABEL[params.screen as Screen] ?? String(params.screen ?? '') } } : { key: `assistant.step.${OWNER_TOOLS[name] ? name : 'working'}` } });
-          const out = await this.runTool(businessId, userId, biz, input.language, name, params, emit).catch((e) => {
+          const out = await this.runTool(businessId, userId, biz, input.language, name, params, emit, taskId, input.text).catch((e) => {
             logger.warn(`assistant tool ${name} failed: ${(e as Error).message}`, 'Orbit');
             return { error: 'That did not work. Tell the owner plainly and suggest what to try.' };
           });
@@ -284,29 +316,100 @@ export class AssistantService {
     if (!reply) reply = FALLBACK[input.language] ?? FALLBACK.en;
     await this.db.withTenant(businessId, async (tx) => {
       await tx.q(`UPDATE tasks SET status = 'done', result = $2, finished_at = now() WHERE id = $1`, [taskId, JSON.stringify({ reply })]);
-      await postFeed(tx, 'orbit', 'answered', { key: 'feed.orbit.answered', params: { question: input.text.length > 80 ? `${input.text.slice(0, 77)}…` : input.text } }, { entityType: 'task', entityId: taskId });
+      await postFeed(tx, 'orbit', 'answered', { key: 'feed.orbit.answered', params: { question: input.text.length > 80 ? `${input.text.slice(0, 77)}…` : input.text } }, {
+        entityType: 'task', entityId: taskId,
+        trace: {
+          agent: 'orbit', taskId, action: { key: 'why.action.orbit.answered' },
+          trigger: { kind: 'owner_command', text: input.text }, approver: { kind: 'not_needed' },
+          facts: [...new Set(usedTools)].slice(0, 3).map((n) => fact('looked_up', 'why.fact.looked_up', { what: `@why.tool.${n}` })),
+        },
+      });
     }, userId);
     emit({ type: 'reply', text: reply, taskId });
   }
 
-  private runTool(businessId: string, userId: string, biz: any, language: string, name: ToolName, params: unknown, emit: (e: AssistantEvent) => void) {
+  private runTool(businessId: string, userId: string, biz: any, language: string, name: ToolName, params: unknown, emit: (e: AssistantEvent) => void, taskId: string, command: string) {
     const def = OWNER_TOOLS[name] as OwnerTool<z.ZodTypeAny> | undefined;
     if (!def) return Promise.resolve({ error: `Unknown tool ${String(name)}` });
     const parsed = def.input.safeParse(params ?? {});
     if (!parsed.success) return Promise.resolve({ error: `Invalid input: ${parsed.error.issues.map((x) => x.message).join('; ')}` });
     return this.db.withTenant(businessId, async (tx) => {
-      const ctx: Ctx = { tx, language, tz: biz.timezone, currency: biz.currency, emit };
+      const ctx: Ctx = { tx, userId, taskId, command, language, tz: biz.timezone, currency: biz.currency, emit };
       if (name === 'message_customer') return this.messageCustomer(ctx, parsed.data);
+      if (name === 'message_group') return this.messageGroup(ctx, parsed.data);
       return def.run(ctx, parsed.data);
     }, userId);
   }
 
+  /** One message to one customer: held 30 s (by default) so the owner can undo it. */
   private async messageCustomer(ctx: Ctx, i: { customer_id: string; text: string }) {
-    const c = await ctx.tx.one(`SELECT id, name, phone, email, consent, opted_out_at FROM customers WHERE id = $1 AND deleted_at IS NULL`, [i.customer_id]);
+    const c = await ctx.tx.one(`SELECT id, name, phone FROM customers WHERE id = $1 AND deleted_at IS NULL`, [i.customer_id]);
     if (!c) return { error: 'No such customer.' };
-    const r = await this.channels.deliver(ctx.tx, 'whatsapp', { customer: c, body: i.text, agent: 'orbit' });
-    if (r.delivered) await postFeed(ctx.tx, 'orbit', 'message_sent', { key: 'feed.orbit.message_sent', params: { customer: (c.name ?? '').split(' ')[0] || c.phone || '—' } }, { entityType: 'customer', entityId: c.id, channel: r.channel ?? undefined });
-    return r.delivered ? { sent: true, channel: r.channel } : { sent: false, reason: 'No channel can reach this customer yet (connect WhatsApp, SMS or Gmail in Powers).' };
+    const who = firstName(c);
+    const h = await this.hold.hold(ctx.tx, {
+      agent: 'orbit', type: 'message', audience: 1, createdBy: ctx.userId,
+      summary: { key: 'held.message', params: { agent: await agentName(ctx.tx, 'orbit'), customer: who } },
+      payload: { kind: 'message', customerId: c.id, text: i.text },
+      trace: {
+        agent: 'orbit', customerId: c.id, action: { key: 'why.action.orbit.message', params: { customer: who } },
+        trigger: { kind: 'owner_command', text: ctx.command }, approver: { kind: 'owner' },
+        facts: [fact('recipient', 'why.fact.you_chose', { customer: who }, { type: 'customer', id: c.id })],
+      },
+    });
+    ctx.emit({ type: 'held', id: h.id, holdUntil: h.holdUntil.toISOString() });
+    return { queued: true, sends_in_seconds: h.seconds, note: `Tell the owner it goes out in ${h.seconds} seconds and they can press Undo until then.` };
+  }
+
+  /** Who a group message would reach, from the business's own data. */
+  private async audience(ctx: Ctx, i: { audience: string; customer_ids?: string[] }): Promise<{ id: string; name: string | null; phone: string | null }[]> {
+    const day = (offset: number) => `(bk.start_at AT TIME ZONE $1)::date = (now() AT TIME ZONE $1)::date + ${offset}`;
+    switch (i.audience) {
+      case 'booked_today':
+      case 'booked_tomorrow':
+        return ctx.tx.q(
+          `SELECT DISTINCT c.id, c.name, c.phone FROM bookings bk JOIN customers c ON c.id = bk.customer_id
+           WHERE bk.deleted_at IS NULL AND c.deleted_at IS NULL AND bk.status IN ('pending', 'confirmed') AND ${day(i.audience === 'booked_today' ? 0 : 1)}`,
+          [ctx.tz],
+        );
+      case 'unpaid':
+        return ctx.tx.q(`SELECT DISTINCT c.id, c.name, c.phone FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.status IN ('sent', 'overdue') AND c.deleted_at IS NULL`);
+      case 'recent_customers':
+        return ctx.tx.q(`SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND last_visit_at > now() - interval '90 days' LIMIT 1000`);
+      default:
+        return (i.customer_ids ?? []).length ? ctx.tx.q(`SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND id = ANY($1::uuid[])`, [i.customer_ids]) : [];
+    }
+  }
+
+  /** A message to a group: preview first; after the owner's yes, held 2 min (by default) so it can be undone. */
+  private async messageGroup(ctx: Ctx, i: { audience: string; customer_ids?: string[]; text: string; confirmed: boolean }) {
+    const people = await this.audience(ctx, i);
+    if (!people.length) return { count: 0, note: 'Nobody matches. Tell the owner; nothing was sent.' };
+    const costs = await ctx.tx.one(`SELECT value FROM platform_settings WHERE key = 'costs.units'`);
+    const each = Number(costs?.value?.whatsappPerMessageInr ?? 0.35);
+    if (!i.confirmed) {
+      return {
+        preview: true,
+        count: people.length,
+        sample_names: people.slice(0, 5).map((p) => firstName(p)),
+        channel: 'WhatsApp (or SMS/email when WhatsApp cannot reach someone)',
+        estimated_cost: formatMoney(ctx.language, 'INR', Math.round(people.length * each * 100) / 100),
+        sample_message: i.text.replace(/\{\{\s*name\s*\}\}/gi, firstName(people[0])),
+        note: 'Show this preview to the owner and ask them to confirm. Do not send until they say yes.',
+      };
+    }
+    const label = `@held.audience.${i.audience}`;
+    const h = await this.hold.hold(ctx.tx, {
+      agent: 'orbit', type: 'bulk_message', audience: people.length, createdBy: ctx.userId, taskId: null,
+      summary: { key: 'held.bulk', params: { agent: await agentName(ctx.tx, 'orbit'), count: people.length } },
+      payload: { kind: 'bulk_message', customerIds: people.map((p) => p.id), text: i.text },
+      trace: {
+        agent: 'orbit', action: { key: 'why.action.orbit.bulk', params: { count: people.length } },
+        trigger: { kind: 'owner_command', text: ctx.command }, approver: { kind: 'owner' },
+        facts: [fact('audience', 'why.fact.audience', { who: label, count: people.length })],
+      },
+    });
+    ctx.emit({ type: 'held', id: h.id, holdUntil: h.holdUntil.toISOString() });
+    return { queued: true, count: people.length, sends_in_seconds: h.seconds, note: `Tell the owner it goes to ${people.length} people in ${Math.round(h.seconds / 60) || h.seconds + ' seconds'}${h.seconds >= 60 ? ' minutes' : ''} and they can press Undo until then.` };
   }
 }
 

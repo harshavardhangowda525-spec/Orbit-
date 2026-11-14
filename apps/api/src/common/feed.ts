@@ -1,6 +1,7 @@
 import type { AgentKey, Sentence } from '@orbit/shared';
 import type { Tx } from '../db/db.service';
 import { liveToBusiness } from '../realtime/live';
+import { recordTrace, type TraceInput } from '../trust/trace';
 
 /**
  * Post an event to the Orbit Feed (and push it live to The Bridge).
@@ -11,16 +12,18 @@ export async function postFeed(
   agent: AgentKey,
   eventType: string,
   sentence: Sentence,
-  opts: { entityType?: string; entityId?: string; valueAmount?: number; minutesSaved?: number; at?: Date; channel?: string } = {},
+  opts: { entityType?: string; entityId?: string; valueAmount?: number; minutesSaved?: number; at?: Date; channel?: string; trace?: TraceInput | string | null } = {},
 ) {
+  // The reasons for the action ("Why?"): recorded now, or an id recorded earlier (e.g. when it was held).
+  const traceId = typeof opts.trace === 'string' ? opts.trace : opts.trace ? await recordTrace(tx, opts.trace) : null;
   const row = await tx.one(
-    `INSERT INTO feed_events (agent_key, event_type, sentence, entity_type, entity_id, value_amount, minutes_saved, at, channel)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), $9) RETURNING id, at`,
-    [agent, eventType, JSON.stringify(sentence), opts.entityType ?? null, opts.entityId ?? null, opts.valueAmount ?? 0, opts.minutesSaved ?? 0, opts.at ?? null, opts.channel ?? null],
+    `INSERT INTO feed_events (agent_key, event_type, sentence, entity_type, entity_id, value_amount, minutes_saved, at, channel, trace_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), $9, $10) RETURNING id, at`,
+    [agent, eventType, JSON.stringify(sentence), opts.entityType ?? null, opts.entityId ?? null, opts.valueAmount ?? 0, opts.minutesSaved ?? 0, opts.at ?? null, opts.channel ?? null, traceId],
   );
   liveToBusiness(tx, { type: 'feed.new', data: { id: row.id } });
   liveToBusiness(tx, { type: 'stats.changed' });
-  return row as { id: string; at: Date };
+  return { ...row, traceId } as { id: string; at: Date; traceId: string | null };
 }
 
 /** Record live activity for an agent (drives the ticker and agent pings). Returns the task id. */

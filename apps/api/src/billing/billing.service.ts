@@ -13,6 +13,7 @@ import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
 import { syncCrewToPlan } from './crew-plan';
+import { recordVersion, snapshot } from '../trust/versions';
 import { UsageService } from './usage.service';
 import { AiService } from '../ai/ai.service';
 import { JobsService } from '../jobs/jobs.service';
@@ -262,12 +263,14 @@ export class BillingController {
       if (plan && !(plan.agents ?? []).includes(agent)) throw badRequest('upgrade_needed', 'This Crew member is not on your plan. Upgrade to switch it on.');
     }
     const row = await this.db.withTenant(t.businessId, async (tx) => {
+      const before = await snapshot(tx, 'agent', agent);
       const r = await tx.one(
         `UPDATE agents SET enabled = COALESCE($2, enabled), display_name = COALESCE($3, display_name), personality = COALESCE($4, personality),
            auto_approval_rules = CASE WHEN jsonb_typeof(auto_approval_rules) = 'object' THEN auto_approval_rules ELSE '{}' END || COALESCE($5::jsonb, '{}')
          WHERE agent_key = $1 RETURNING agent_key AS agent, display_name AS name, personality, enabled, auto_approval_rules AS permissions`,
         [agent, b.data.enabled ?? null, b.data.displayName ?? null, b.data.personality ?? null, b.data.permissions ? JSON.stringify(b.data.permissions) : null],
       );
+      if (r) await recordVersion(tx, { entity: 'agent', id: agent, label: { key: 'change.agent', params: { agent: r.name } }, before, after: await snapshot(tx, 'agent', agent), by: t.userId });
       if (r && b.data.enabled !== undefined) {
         await postFeed(tx, 'orbit', b.data.enabled ? 'agent_on' : 'agent_off', { key: b.data.enabled ? 'feed.orbit.agent_on' : 'feed.orbit.agent_off', params: { agent: r.name } });
       }
@@ -285,7 +288,11 @@ export class BillingController {
   async reviewLink(@CurrentTenant() t: Tenant, @Body() raw: unknown) {
     const b = z.object({ url: z.string().trim().url().max(500).or(z.literal('')) }).safeParse(raw);
     if (!b.success || (b.data.url && !/^https:\/\//.test(b.data.url))) throw badRequest('invalid_url', 'Please paste a full https:// link, like your Google review link.');
-    await this.db.withTenant(t.businessId, (tx) => tx.q(`UPDATE business_profiles SET review_url = NULLIF($1, '') WHERE business_id = app_current_business()`, [b.data.url]), t.userId);
+    await this.db.withTenant(t.businessId, async (tx) => {
+      const before = await snapshot(tx, 'profile', t.businessId);
+      await tx.q(`UPDATE business_profiles SET review_url = NULLIF($1, '') WHERE business_id = app_current_business()`, [b.data.url]);
+      await recordVersion(tx, { entity: 'profile', id: t.businessId, label: { key: 'change.review_link' }, before, after: await snapshot(tx, 'profile', t.businessId), by: t.userId });
+    }, t.userId);
     return { ok: true, url: b.data.url || null };
   }
 

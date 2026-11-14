@@ -527,6 +527,7 @@ export function Messaging({ onError, role }: { onError: OnError; role: string })
 export function Reports({ onError }: { onError: OnError }) {
   const { data: m } = useLoad<any>('/admin/reports/monthly?months=12', onError);
   const { data: cohorts } = useLoad<any[]>('/admin/reports/cohorts', onError);
+  const { data: trust } = useLoad<any>('/admin/reports/trust', onError);
   const [gstMonth, setGstMonth] = useState(new Date().toISOString().slice(0, 7));
   const { data: gst } = useLoad<any>(`/admin/reports/gst?month=${gstMonth}`, onError, [gstMonth]);
   const dl = (ds: string) => apiDownload(`/admin/export/${ds}`, `orbit-${ds}.csv`).catch((e) => onError(e.message));
@@ -545,6 +546,17 @@ export function Reports({ onError }: { onError: OnError }) {
         <div className="table-wrap"><table className="table"><thead><tr><th>Signed up</th><th>Businesses</th><th>Active (30 days)</th><th>Paying now</th><th>Ever upgraded</th></tr></thead>
           <tbody>{(cohorts ?? []).map((c) => <tr key={c.cohort}><td>{c.cohort}</td><td>{c.businesses}</td><td>{c.active} ({Math.round((c.active / Math.max(1, c.businesses)) * 100)}%)</td><td>{c.paying}</td><td>{c.everUpgraded}</td></tr>)}</tbody>
         </table></div>
+      </div>
+      <div className="card stack" data-testid="trust-report">
+        <h3>Trust: owner feedback on “Why?” and Undo (last 90 days)</h3>
+        <p className="small muted">A rule with many “Change this rule” or “Don’t do this again” answers needs a better default. A high undo rate means Orbit is suggesting the wrong thing.</p>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Rule</th><th>Looks good</th><th>Change this rule</th><th>Don’t do this again</th><th>Businesses</th></tr></thead>
+          <tbody>{(trust?.rules ?? []).length ? trust.rules.map((r: any) => <tr key={r.rule}><td>{r.rule}</td><td>{r.good}</td><td>{r.changeRule}</td><td>{r.exceptions}</td><td>{r.businesses}</td></tr>) : <tr><td colSpan={5} className="muted">No feedback yet.</td></tr>}</tbody>
+        </table></div>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Held action</th><th>Held</th><th>Undone</th><th>Undo rate</th></tr></thead>
+          <tbody>{(trust?.undo ?? []).length ? trust.undo.map((u: any) => <tr key={u.type}><td>{u.type.replace('_', ' ')}</td><td>{u.held}</td><td>{u.undone}</td><td>{u.undoPct == null ? '—' : `${u.undoPct}%`}</td></tr>) : <tr><td colSpan={4} className="muted">Nothing held yet.</td></tr>}</tbody>
+        </table></div>
+        {trust && <div className="small muted">Settings changes undone: {trust.settingsUndone.undone} of {trust.settingsUndone.changes}</div>}
       </div>
       <div className="card stack">
         <div className="row between"><h3>GST summary for the accountant</h3><input className="input" type="month" style={{ maxWidth: 180 }} value={gstMonth} onChange={(e) => setGstMonth(e.target.value)} /></div>

@@ -26,6 +26,7 @@ import { ZohoModule } from './ledger/zoho.service';
 import { BillingModule } from './billing/billing.service';
 import { VoiceModule } from './voice/voice.module';
 import { AdminCoreModule } from './admin/admin-core.module';
+import { TrustModule } from './trust/trust.controller';
 
 @Controller()
 class HealthController {
@@ -43,6 +44,7 @@ class HealthController {
     RealtimeModule,
     JobsModule,
     ChannelsModule,
+    TrustModule,
     BookingsModule,
     KnowledgeModule,
     AiModule,

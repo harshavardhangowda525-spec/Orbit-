@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { JwtAuthGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { badRequest } from '../common/errors';
+import { agentName, fact } from '../trust/trace';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
@@ -411,7 +412,19 @@ export class VoiceService implements OnModuleInit {
           'vox',
           'call_handled',
           { key: o.handedOver ? 'feed.vox.call_transferred' : 'feed.vox.call', params: { customer: (c?.name ?? '').split(' ')[0] || c?.phone || call.from_number || '—', minutes: Math.max(1, Math.round(o.seconds / 60)) } },
-          { entityType: 'call', entityId: callId, minutesSaved: Math.max(2, Math.ceil(o.seconds / 60)), channel: 'phone' },
+          {
+            entityType: 'call', entityId: callId, minutesSaved: Math.max(2, Math.ceil(o.seconds / 60)), channel: 'phone',
+            trace: {
+              agent: 'vox', customerId: call.customer_id ?? null,
+              action: { key: o.handedOver ? 'why.action.vox.transferred' : 'why.action.vox.answered', params: { agent: await agentName(tx, 'vox') } },
+              trigger: { kind: 'inbound_call' }, approver: { kind: 'not_needed' },
+              facts: [
+                fact('caller', 'why.fact.caller', { customer: (c?.name ?? '').split(' ')[0] || c?.phone || call.from_number || '—' }, call.customer_id ? { type: 'customer', id: call.customer_id } : undefined),
+                fact('minutes', 'why.fact.call_minutes', { count: Math.max(1, Math.round(o.seconds / 60)) }),
+                ...(o.handedOver ? [fact('wanted_person', 'why.fact.wanted_person')] : []),
+              ],
+            },
+          },
         );
       }
       liveToBusiness(tx, { type: 'call.ended', data: { id: callId } });

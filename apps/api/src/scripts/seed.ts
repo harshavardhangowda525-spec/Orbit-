@@ -183,36 +183,66 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
     customers[6].id, s.type === 'gym' ? 'Personal training' : 'Hair colour', minsAgo(90), customers[7].id, at(-1, 18),
   ]);
 
-  const feed = (agent: string, type: string, key: string, params: Record<string, unknown>, m: number, value = 0, minutes = 0, channel: string | null = null) =>
-    tx.q(`INSERT INTO feed_events (agent_key, event_type, sentence, value_amount, minutes_saved, at, channel) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
-      agent, type, JSON.stringify({ key, params }), value, minutes, minsAgo(m), channel,
+  // "Why?": the reasons each demo action was taken, stored like real ones (see trust/trace.ts).
+  const cust = (first: string) => customers.find((c) => c.name.startsWith(first))?.id ?? null;
+  const trace = async (t: { agent: string; customer?: string; action: unknown; trigger: unknown; rule?: unknown; facts: unknown[]; approver: unknown }) =>
+    (await tx.one(
+      `INSERT INTO decision_traces (agent_key, customer_id, action, trigger, rule, facts, approver) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [t.agent, t.customer ? cust(t.customer) : null, JSON.stringify(t.action), JSON.stringify(t.trigger), t.rule ? JSON.stringify(t.rule) : null, JSON.stringify(t.facts), JSON.stringify(t.approver)],
+    ))!.id as string;
+  const booked = (customer: string, service: string, when: Date, channel: string) =>
+    trace({
+      agent: 'aria', customer, action: { key: 'why.action.booking.created_by', params: { agent: 'Aria', customer, service } }, trigger: { kind: 'inbound_message' }, approver: { kind: 'not_needed' },
+      facts: [{ code: 'chose_slot', text: { key: 'why.fact.customer_chose', params: { customer, service, date: `~d:${when.toISOString()}`, time: `~t:${when.toISOString()}` } }, ref: { type: 'customer', id: cust(customer) } }, { code: 'channel', text: { key: 'why.fact.asked_on', params: { channel: `@channel.${channel}` } } }],
+    });
+  const feed = (agent: string, type: string, key: string, params: Record<string, unknown>, m: number, value = 0, minutes = 0, channel: string | null = null, traceId: string | null = null) =>
+    tx.q(`INSERT INTO feed_events (agent_key, event_type, sentence, value_amount, minutes_saved, at, channel, trace_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [
+      agent, type, JSON.stringify({ key, params }), value, minutes, minsAgo(m), channel, traceId,
     ]);
   // Live Crew activity (drives the agent pings and the ticker on The Bridge).
   const activity = (agent: string, key: string, params: Record<string, unknown>) =>
     tx.q(`INSERT INTO tasks (agent_key, created_by_kind, goal, status, activity, started_at) VALUES ($1, 'system', $2, 'running', $3, now())`, [agent, key, JSON.stringify({ key, params })]);
-  const card = (agent: string, type: string, key: string, params: Record<string, unknown>, options: unknown[], context: unknown, m: number, def = 'no') =>
-    tx.q(`INSERT INTO approval_cards (agent_key, type, title, options, context, default_option, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '1 day')`, [
-      agent, type, JSON.stringify({ key, params }), JSON.stringify(options), JSON.stringify(context), def, minsAgo(m),
+  const card = (agent: string, type: string, key: string, params: Record<string, unknown>, options: unknown[], context: unknown, m: number, def = 'no', traceId: string | null = null) =>
+    tx.q(`INSERT INTO approval_cards (agent_key, type, title, options, context, default_option, created_at, expires_at, trace_id) VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '1 day', $8)`, [
+      agent, type, JSON.stringify({ key, params }), JSON.stringify(options), JSON.stringify(context), def, minsAgo(m), traceId,
     ]);
 
   if (s.type === 'salon') {
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Anil', service: 'a haircut', time: `~t:${at(0, 16).toISOString()}`, channel: '@channel.whatsapp' }, 8, 300, 6, 'whatsapp');
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Sneha', service: 'a facial', time: `~t:${at(0, 17).toISOString()}`, channel: '@channel.website_chat' }, 20, 1200, 6, 'website_chat');
-    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Kiran', service: 'a beard trim', time: `~t:${at(0, 18).toISOString()}`, channel: '@channel.whatsapp' }, 26, 150, 6, 'whatsapp');
-    await feed('aria', 'handover', 'feed.aria.handover', { customer: 'Priya' }, 30, 0, 0, 'whatsapp');
-    await feed('nudge', 'reminder_sent', 'feed.nudge.reminders', { count: 7 }, 75, 0, 21, 'whatsapp');
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Anil', service: 'a haircut', time: `~t:${at(0, 16).toISOString()}`, channel: '@channel.whatsapp' }, 8, 300, 6, 'whatsapp', await booked('Anil', 'a haircut', at(0, 16), 'whatsapp'));
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Sneha', service: 'a facial', time: `~t:${at(0, 17).toISOString()}`, channel: '@channel.website_chat' }, 20, 1200, 6, 'website_chat', await booked('Sneha', 'a facial', at(0, 17), 'website_chat'));
+    await feed('aria', 'booking_created', 'feed.aria.booked', { customer: 'Kiran', service: 'a beard trim', time: `~t:${at(0, 18).toISOString()}`, channel: '@channel.whatsapp' }, 26, 150, 6, 'whatsapp', await booked('Kiran', 'a beard trim', at(0, 18), 'whatsapp'));
+    const handover = await trace({
+      agent: 'aria', customer: 'Priya', action: { key: 'why.action.aria.handover', params: { agent: 'Aria', customer: 'Priya' } }, trigger: { kind: 'inbound_message' }, approver: { kind: 'not_needed' },
+      facts: [{ code: 'reason', text: { key: 'why.fact.handover_reason', params: { reason: 'Customer asked for a discount' } } }, { code: 'discounts', text: { key: 'why.fact.discounts_need_you' } }],
+    });
+    await feed('aria', 'handover', 'feed.aria.handover', { customer: 'Priya' }, 30, 0, 0, 'whatsapp', handover);
+    await feed('nudge', 'reminder_sent', 'feed.nudge.reminders', { count: 7 }, 75, 0, 21, 'whatsapp', await trace({
+      agent: 'nudge', action: { key: 'why.action.nudge.reminders', params: { agent: 'Nudge', count: 7 } }, trigger: { kind: 'sequence_rule' }, approver: { kind: 'auto_rule' },
+      rule: { code: 'nudge.reminder', label: { key: 'why.rule.nudge.reminder' }, setting: '/bridge?view=crew&agent=nudge' },
+      facts: [{ code: 'tomorrow', text: { key: 'why.fact.booked_tomorrow', params: { count: 7 } } }],
+    }));
     await feed('ledger', 'payment_received', 'feed.ledger.collected', { amount: '~m:INR:2400', count: 3 }, 120, 2400, 15, 'whatsapp');
     await feed('aria', 'question_answered', 'feed.aria.answered', { customer: 'Divya', topic: 'prices' }, 150, 0, 4, 'instagram');
-    await feed('nudge', 'review_request_sent', 'feed.nudge.review_request', { customer: 'Lakshmi' }, 200, 0, 3, 'whatsapp');
+    await feed('nudge', 'review_request_sent', 'feed.nudge.review_request', { customer: 'Lakshmi' }, 200, 0, 3, 'whatsapp', await trace({
+      agent: 'nudge', customer: 'Lakshmi', action: { key: 'why.action.nudge.review_request', params: { agent: 'Nudge', customer: 'Lakshmi' } }, trigger: { kind: 'sequence_rule' }, approver: { kind: 'auto_rule' },
+      rule: { code: 'nudge.review_request', label: { key: 'why.rule.nudge.review_request' }, setting: '/bridge?view=crew&agent=nudge' },
+      facts: [{ code: 'visit_done', text: { key: 'why.fact.visit_done', params: { customer: 'Lakshmi', service: 'a hair spa', date: `~d:${at(-1, 15).toISOString()}` } }, ref: { type: 'customer', id: cust('Lakshmi') } }, { code: 'not_asked', text: { key: 'why.fact.not_asked_recently' } }],
+    }));
     await activity('aria', 'activity.aria.replying', { customer: 'Pooja', channel: '@channel.whatsapp' });
     await activity('nudge', 'activity.nudge.sending', {});
     await tx.q(`INSERT INTO reviews (platform, author, rating, text, posted_at) VALUES ('google', 'Rahul', 2, 'Had to wait 30 minutes even with a booking.', now() - interval '3 hours'), ('google', 'Divya', 5, 'Anjali is the best! Lovely haircut.', now() - interval '6 days'), ('google', 'Arjun', 5, 'Clean, quick and friendly.', now() - interval '12 days')`);
     await card('aria', 'discount', 'card.discount', { customer: 'Priya', percent: 10 },
       [{ key: 'yes', label: 'card.option.yes', style: 'primary', outcome: 'approved' }, { key: 'no', label: 'card.option.no', style: 'secondary', outcome: 'rejected' }, { key: 'reply_myself', label: 'card.option.reply_myself', style: 'ghost', outcome: 'edited' }],
-      { channel: 'whatsapp', conversation: 'Priya: "Can I get a discount if I book for my sister too?"' }, 13);
+      { channel: 'whatsapp', conversation: 'Priya: "Can I get a discount if I book for my sister too?"' }, 13, 'no', await trace({
+        agent: 'aria', customer: 'Priya', action: { key: 'why.action.aria.asked_you_discount', params: { agent: 'Aria', customer: 'Priya' } }, trigger: { kind: 'inbound_message' }, approver: { kind: 'owner' },
+        facts: [{ code: 'asked', text: { key: 'why.fact.asked_discount', params: { customer: 'Priya' } } }, { code: 'discounts', text: { key: 'why.fact.discounts_need_you' } }],
+      }));
     await card('nudge', 'review_reply', 'card.bad_review', { customer: 'Rahul' },
       [{ key: 'post', label: 'card.option.post', style: 'primary', outcome: 'approved' }, { key: 'edit', label: 'card.option.edit', style: 'secondary', outcome: 'edited' }],
-      { channel: 'google_business_profile', review: 'Had to wait 30 minutes even with a booking.', suggestedReply: 'Sorry about the wait, Rahul. That is not the experience we want for you. Your next visit has a 15-minute guarantee, and we would love to make it up to you.' }, 170);
+      { channel: 'google_business_profile', review: 'Had to wait 30 minutes even with a booking.', suggestedReply: 'Sorry about the wait, Rahul. That is not the experience we want for you. Your next visit has a 15-minute guarantee, and we would love to make it up to you.' }, 170, 'no', await trace({
+        agent: 'nudge', customer: 'Rahul', action: { key: 'why.action.nudge.drafted_review_reply', params: { agent: 'Nudge', customer: 'Rahul' } }, trigger: { kind: 'external_event' }, approver: { kind: 'owner' },
+        facts: [{ code: 'review', text: { key: 'why.fact.new_review', params: { customer: 'Rahul', stars: 2 } } }, { code: 'public', text: { key: 'why.fact.public_reply_needs_you' } }],
+      }));
   } else {
     await feed('vox', 'calls_done', 'feed.vox.called_batch', { count: 6, renewed: 4 }, 40, 6000, 45, 'phone');
     await activity('vox', 'activity.vox.calling', { count: 3 });

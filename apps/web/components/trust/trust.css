@@ -1,0 +1,98 @@
+/* Trust: the Undo window bar and the "Why?" sheet. Space theme, same tokens and motion as The Bridge. */
+
+/* ---- Undo bar: just above Ask Orbit ---- */
+.undo-stack {
+  position: fixed; z-index: 44; left: 12px; right: 12px; bottom: calc(76px + 74px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+@media (min-width: 1024px) {
+  .undo-stack { left: calc(50% + var(--side-w, 0px) / 2); right: auto; transform: translateX(-50%); width: min(760px, calc(100vw - var(--side-w, 0px) - 96px)); bottom: calc(18px + 78px + env(safe-area-inset-bottom)); }
+}
+.undo-row {
+  pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; border-radius: 18px; color: #fff;
+  background: linear-gradient(145deg, rgba(52, 44, 130, 0.96), rgba(20, 18, 56, 0.97)); border: 1px solid rgba(169, 155, 255, 0.35);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5); animation: undo-in 0.32s var(--ease) both;
+}
+.undo-row.cancelled { border-color: rgba(94, 224, 181, 0.45); }
+.undo-row.executed { border-color: rgba(255, 255, 255, 0.18); }
+.undo-row.failed { border-color: rgba(255, 154, 122, 0.6); }
+@keyframes undo-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.undo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.undo-text { font-weight: 700; font-size: 14px; line-height: 1.3; }
+.undo-main b { font-size: 14px; }
+.undo-main small { color: rgba(230, 227, 255, 0.75); font-size: 12px; }
+.undo-line { display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.undo-line i { display: block; height: 100%; background: linear-gradient(90deg, #a99bff, #5ee0b5); transform-origin: left; transition: transform 0.25s linear; }
+.undo-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.undo-secs { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; color: rgba(230, 227, 255, 0.75); min-width: 30px; text-align: right; }
+.undo-btn { background: #fff !important; color: #24205e !important; font-weight: 800; }
+.undo-actions .link-btn { color: #c9c4ff; font-weight: 700; }
+.undo-x {
+  width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.08); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+}
+@media (max-width: 520px) {
+  .undo-row { flex-wrap: wrap; }
+  .undo-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* ---- "Why?" link on feed rows and cards ---- */
+.why-link {
+  border: 0; background: none; padding: 2px 6px; margin-left: 4px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700; color: #c9c4ff;
+}
+.why-link:hover, .why-link:focus-visible { background: rgba(169, 155, 255, 0.16); }
+
+/* ---- "Why?" bottom sheet ---- */
+.why-sheet { position: fixed; inset: 0; z-index: 70; background: rgba(5, 4, 15, 0.6); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.2s ease; }
+.why-card {
+  width: min(560px, 100%); max-height: 86vh; overflow: auto; padding: 10px 20px calc(22px + env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; color: #fff;
+  background: linear-gradient(160deg, rgba(40, 34, 98, 0.99), rgba(14, 12, 40, 0.99)); border: 1px solid rgba(255, 255, 255, 0.16); border-bottom: 0;
+  animation: sheet-up 0.28s var(--ease);
+}
+@media (min-width: 1024px) { .why-sheet { align-items: center; } .why-card { border-radius: 26px; border-bottom: 1px solid rgba(255, 255, 255, 0.16); } }
+.why-grab { width: 44px; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); margin: 4px auto 12px; }
+.why-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.why-head h2 { flex: 1; font-size: 17px; margin: 0; }
+.why-sentence { font-size: 18px; line-height: 1.45; font-weight: 600; margin: 4px 0 16px; }
+.why-label { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(201, 196, 255, 0.8); margin-bottom: 8px; }
+.why-facts { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.why-fact {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 11px 14px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 14px; cursor: pointer;
+}
+button.why-fact:hover { background: rgba(169, 155, 255, 0.14); }
+.why-fact.plain { cursor: default; }
+.why-fact.approver { color: rgba(230, 227, 255, 0.75); font-size: 13px; }
+.why-fact small { display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(201, 196, 255, 0.75); margin-bottom: 2px; }
+.why-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.why-actions .btn { flex: 1 1 auto; }
+.why-chip { padding: 8px 12px; border-radius: 999px; background: rgba(94, 224, 181, 0.16); color: #5ee0b5; font-size: 13px; font-weight: 700; align-self: center; }
+.why-done { padding: 12px 14px; border-radius: 14px; background: rgba(94, 224, 181, 0.14); color: #c8f5e5; font-weight: 700; }
+.why-skel i { display: block; height: 16px; border-radius: 8px; background: rgba(255, 255, 255, 0.08); margin: 10px 0; }
+.why-skel i:last-child { width: 60%; }
+
+/* ---- Crew → Safety ---- */
+.safety { display: flex; flex-direction: column; gap: 14px; }
+.safety-holds { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.safety-holds label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; }
+.safety-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.safety-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); font-size: 14px; }
+.safety-list li small { display: block; color: var(--muted); font-size: 12px; }
+.safety-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.highlight-flash { animation: flash 1.6s ease 2; border-radius: 16px; }
+@keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 rgba(169, 155, 255, 0); } 50% { box-shadow: 0 0 0 4px rgba(169, 155, 255, 0.55); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .undo-row, .why-sheet, .why-card { animation: none; }
+  .undo-line i { transition: none; }
+  .highlight-flash { animation: none; outline: 3px solid rgba(169, 155, 255, 0.6); }
+}
+
+/* Feed rows: "Why?" sits in the row's bottom-right corner. */
+.feed2 li > .feed-why { position: absolute; right: 10px; bottom: 8px; z-index: 2; }
+.feed2 li > .rowbtn { padding-right: 56px; }
+
+/* The space theme puts its direct children in the flow; these two float above everything. */
+.space-theme > div.undo-stack, .space-theme > div.why-sheet { position: fixed; }
+.space-theme > div.undo-stack { z-index: 44; }
+.space-theme > div.why-sheet { z-index: 70; }

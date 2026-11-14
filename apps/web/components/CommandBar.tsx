@@ -29,6 +29,12 @@ const subscribe = (l: () => void) => {
 };
 const useChat = () => useSyncExternalStore(subscribe, () => chat, () => chat);
 
+/** Put text in Ask Orbit for the owner to edit (e.g. "Edit and send again" after Undo). */
+const prefills = new Set<(text: string) => void>();
+export function prefillCommand(text: string) {
+  prefills.forEach((f) => f(text));
+}
+
 /**
  * Ask Orbit anything. The answer comes from the business's AI model; each step
  * ("Checking the schedule", "Opening People") shows as it happens, and screens open
@@ -45,6 +51,11 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
   const hints = ['cmd.placeholder', ...suggestions.map((s) => `@${s}`)];
   const i = useCycle(hints.length, 2600, running && !text);
   const hint = hints[i].startsWith('@') ? t('cmd.try', { example: t(hints[i].slice(1)) }) : t(hints[i]);
+  useEffect(() => {
+    const f = (v: string) => setText(v);
+    prefills.add(f);
+    return () => void prefills.delete(f);
+  }, []);
   const SR = typeof window !== 'undefined' ? (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition : null;
 
   async function send(value: string) {

@@ -138,3 +138,46 @@ test('i18n: formats times and money in the viewer language', () => {
   const t = translate('en', 'brief.next_booking', { time: '~t:2026-11-10T10:30:00Z' }, { timeZone: 'Asia/Kolkata' });
   assert.match(t, /4:00\s?pm/i);
 });
+
+// ---- "Why?" explanations (trust.ts) ----
+import { explainTrace, ungroundedWords, type DecisionTrace } from './trust';
+
+const reminder: DecisionTrace = {
+  agent: 'nudge',
+  action: { key: 'why.action.nudge.reminder', params: { agent: 'Nudge', customer: 'Rohan' } },
+  trigger: { kind: 'sequence_rule' },
+  rule: { code: 'nudge.reminder', label: { key: 'why.rule.nudge.reminder' } },
+  facts: [{ code: 'booking_at', text: { key: 'why.fact.booking_at', params: { customer: 'Rohan', service: 'Haircut', date: '~d:2026-11-15T05:30:00Z', time: '~t:2026-11-15T05:30:00Z' } } }],
+  approver: { kind: 'auto_rule' },
+};
+
+test('Why? is one sentence built only from the trace, in every language', () => {
+  for (const l of LANGUAGES) {
+    const text = explainTrace(l.code, reminder, { timeZone: 'Asia/Kolkata' });
+    assert.ok(text.includes('Rohan'), text);
+    assert.ok(!text.includes('{{'), text);
+    assert.deepEqual(ungroundedWords(l.code, text, reminder, { timeZone: 'Asia/Kolkata' }), [], `${l.code}: ${text}`);
+  }
+  assert.equal(explainTrace('en', reminder, { timeZone: 'Asia/Kolkata' }), 'Rohan’s Haircut is on 15 Nov at 11:00 am, so Nudge sent Rohan a reminder (your “Appointment reminders” rule).');
+});
+
+test('the fact check catches names, numbers and dates that are not in the trace', () => {
+  const bad = 'Rohan has 3 visits, so Nudge sent Priya a reminder on 14 Nov.';
+  assert.deepEqual(ungroundedWords('en', bad, reminder, { timeZone: 'Asia/Kolkata' }).sort(), ['14', '3', 'Priya'].sort());
+});
+
+test('every Why? template is grounded: no fixed numbers or names outside the trace', () => {
+  // Fill each template's params with marker values; the rendered text may only contain those.
+  for (const key of Object.keys(en).filter((k) => /^why\.(action|fact|trigger)\./.test(k) && !k.endsWith('.one'))) {
+    const params = Object.fromEntries([...(en as Record<string, string>)[key].matchAll(/\{\{(\w+)\}\}/g)].map((m) => [m[1], m[1] === 'count' ? 2 : `Zed${m[1]}`]));
+    const tr: DecisionTrace = { agent: 'orbit', action: { key, params }, trigger: { kind: 'schedule' }, facts: [], approver: { kind: 'not_needed' } };
+    for (const l of LANGUAGES) {
+      const text = explainTrace(l.code, tr);
+      assert.deepEqual(ungroundedWords(l.code, text, tr), [], `${l.code} ${key}: ${text}`);
+    }
+  }
+});
+
+test('no trace details: the sheet says so instead of guessing', () => {
+  for (const l of LANGUAGES) assert.ok(translate(l.code, 'why.no_details').length > 5);
+});

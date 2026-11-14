@@ -13,6 +13,7 @@ import { CurrentTenant, Public, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { AppError, badRequest, notFound } from '../common/errors';
 import { ZodPipe } from '../common/zod.pipe';
+import { agentName, fact, hasException } from '../trust/trace';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { hashToken } from '../realtime/hash';
@@ -289,7 +290,15 @@ export class LedgerService implements OnModuleInit {
       const lang = c.language ?? 'en';
       const body = translate(lang, 'ledger.msg.invoice', { name: (c.name ?? '').split(' ')[0] || '', number: inv.number, business: inv.seller_snapshot.name, amount: money(lang, inv.currency, inv.total), url });
       const r = await this.channels.deliver(tx, 'whatsapp', { customer: c, body, agent: 'ledger' });
-      await postFeed(tx, 'ledger', 'invoice_sent', { key: 'feed.ledger.invoice_sent', params: { number: inv.number, customer: (c.name ?? '').split(' ')[0] || '—', amount: `~m:${inv.currency}:${inv.total}` } }, { entityType: 'invoice', entityId: inv.id, channel: r.channel ?? undefined });
+      const who = (c.name ?? '').split(' ')[0] || '—';
+      await postFeed(tx, 'ledger', 'invoice_sent', { key: 'feed.ledger.invoice_sent', params: { number: inv.number, customer: who, amount: `~m:${inv.currency}:${inv.total}` } }, {
+        entityType: 'invoice', entityId: inv.id, channel: r.channel ?? undefined,
+        trace: {
+          agent: 'ledger', customerId: c.id, action: { key: 'why.action.ledger.invoice_sent', params: { agent: await agentName(tx, 'ledger'), customer: who } },
+          trigger: { kind: 'owner_decision' }, approver: { kind: 'owner' },
+          facts: [fact('invoice', 'why.fact.invoice', { number: inv.number, amount: `~m:${inv.currency}:${inv.total}` }, { type: 'invoice', id: inv.id })],
+        },
+      });
       liveToBusiness(tx, { type: 'invoice.updated', data: { id: inv.id } });
       return { ...(await this.detail(tx, inv.id)), url, payUrl, delivered: r.delivered, channel: r.channel };
     }, t.userId);
@@ -319,7 +328,14 @@ export class LedgerService implements OnModuleInit {
     }
     this.afterPayment?.(tx, inv.id, pay.id);
     const who = (inv.customer_snapshot?.name ?? '').split(' ')[0] || '—';
-    await postFeed(tx, 'ledger', 'payment_received', { key: 'feed.ledger.paid', params: { amount: `~m:${inv.currency}:${amount}`, customer: who, number: inv.number ?? '' } }, { entityType: 'invoice', entityId: inv.id, valueAmount: amount });
+    await postFeed(tx, 'ledger', 'payment_received', { key: 'feed.ledger.paid', params: { amount: `~m:${inv.currency}:${amount}`, customer: who, number: inv.number ?? '' } }, {
+      entityType: 'invoice', entityId: inv.id, valueAmount: amount,
+      trace: {
+        agent: 'ledger', customerId: inv.customer_id ?? null, action: { key: 'why.action.ledger.paid', params: { agent: await agentName(tx, 'ledger'), number: inv.number ?? '' } },
+        trigger: p.provider === 'manual' ? { kind: 'owner_decision' } : { kind: 'external_event' }, approver: { kind: p.provider === 'manual' ? 'owner' : 'not_needed' },
+        facts: [fact('payment', p.provider === 'manual' ? 'why.fact.paid_manual' : 'why.fact.paid_online', { customer: who, amount: `~m:${inv.currency}:${amount}` }, { type: 'invoice', id: inv.id })],
+      },
+    });
     liveToBusiness(tx, { type: 'invoice.updated', data: { id: inv.id } });
     return true;
   }
@@ -512,6 +528,7 @@ export class LedgerService implements OnModuleInit {
         await this.syncInvoice(tx, inv.id).catch(() => undefined); // paid meanwhile? then no reminder
         if ((await tx.one(`SELECT status FROM invoices WHERE id = $1`, [inv.id])).status !== 'overdue') continue;
         const c = await tx.one(`SELECT id, name, phone, email, consent, opted_out_at, language FROM customers WHERE id = $1`, [inv.customer_id]);
+        if (await hasException(tx, c?.id, 'ledger.invoice_reminder')) continue; // "Don't do this again for {customer}"
         const lang = c.language ?? 'en';
         const token = `${businessId}.${randomBytes(18).toString('base64url')}`;
         await tx.q(`UPDATE invoices SET public_token_hash = $2 WHERE id = $1`, [inv.id, hashToken(token)]);
@@ -520,7 +537,20 @@ export class LedgerService implements OnModuleInit {
         await tx.q(`UPDATE invoices SET reminders_sent = reminders_sent + 1, last_reminded_at = now() WHERE id = $1`, [inv.id]);
         sent++;
         if (r.delivered) {
-          await postFeed(tx, 'ledger', 'invoice_reminder', { key: 'feed.ledger.reminder', params: { number: inv.number, customer: (c.name ?? '').split(' ')[0] || '—' } }, { entityType: 'invoice', entityId: inv.id, channel: r.channel ?? undefined });
+          const who = (c.name ?? '').split(' ')[0] || '—';
+          const left = Number(inv.total) - Number(inv.amount_paid);
+          await postFeed(tx, 'ledger', 'invoice_reminder', { key: 'feed.ledger.reminder', params: { number: inv.number, customer: who } }, {
+            entityType: 'invoice', entityId: inv.id, channel: r.channel ?? undefined,
+            trace: {
+              agent: 'ledger', customerId: c.id, action: { key: 'why.action.ledger.invoice_reminder', params: { agent: await agentName(tx, 'ledger'), customer: who } },
+              trigger: { kind: 'schedule' }, approver: { kind: 'auto_rule' },
+              rule: { code: 'ledger.invoice_reminder', label: { key: 'why.rule.ledger.invoice_reminder' }, setting: '/bridge?view=crew&agent=ledger' },
+              facts: [
+                fact('overdue', 'why.fact.invoice_overdue', { number: inv.number, amount: `~m:${inv.currency}:${left}`, date: `~d:${new Date(inv.due_at).toISOString()}` }, { type: 'invoice', id: inv.id }),
+                ...(inv.reminders_sent > 0 ? [fact('reminded', 'why.fact.reminders_before', { count: inv.reminders_sent })] : []),
+              ],
+            },
+          });
         }
       }
       return sent;

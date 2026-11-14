@@ -580,6 +580,30 @@ export class AdminCentreController {
     );
   }
 
+  /**
+   * Trust: owner feedback on "Why?" per rule (to improve defaults), and how often
+   * each kind of held action is undone (a high rate means a bad suggestion).
+   */
+  @Get('reports/trust')
+  trust() {
+    return this.db.adminTx(async (tx) => ({
+      rules: await tx.q(
+        `SELECT COALESCE(rule_code, agent_key) AS rule,
+                count(*) FILTER (WHERE verdict = 'good')::int AS good,
+                count(*) FILTER (WHERE verdict = 'change_rule')::int AS "changeRule",
+                count(*) FILTER (WHERE verdict = 'exception')::int AS exceptions,
+                count(DISTINCT business_id)::int AS businesses
+         FROM trace_feedback WHERE created_at > now() - interval '90 days' GROUP BY 1 ORDER BY count(*) DESC LIMIT 50`,
+      ),
+      undo: await tx.q(
+        `SELECT action_type AS type, count(*)::int AS held, count(*) FILTER (WHERE status = 'cancelled')::int AS undone,
+                round(100.0 * count(*) FILTER (WHERE status = 'cancelled') / NULLIF(count(*), 0), 1)::float AS "undoPct"
+         FROM held_actions WHERE created_at > now() - interval '90 days' GROUP BY 1 ORDER BY 1`,
+      ),
+      settingsUndone: (await tx.one(`SELECT count(*) FILTER (WHERE reverted_at IS NOT NULL)::int AS undone, count(*)::int AS changes FROM field_versions WHERE created_at > now() - interval '90 days'`)) ?? { undone: 0, changes: 0 },
+    }));
+  }
+
   /** GST summary of plan payments for the accountant (prices include 18% GST). */
   @Get('reports/gst')
   gst(@Query('month') month?: string) {

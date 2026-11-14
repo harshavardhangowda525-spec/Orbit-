@@ -9,6 +9,7 @@ import { AgentDot } from './bridge/Hero';
 import { CrewSettings } from './PlanCrew';
 import { timeAgo } from './bridge/Feed';
 import { VoxPanel } from './VoxPanel';
+import { SafetyPanel } from './trust/SafetyPanel';
 
 function useLoad<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -23,8 +24,19 @@ function useLoad<T>(path: string) {
 }
 
 /** Crew: each agent as a card — status, today's work, and its recent tasks. */
-export function CrewView({ data, selected, onSelect }: { data: BridgeData; selected: string | null; onSelect: (a: string) => void }) {
+export function CrewView({ data, selected, onSelect, highlight }: { data: BridgeData; selected: string | null; onSelect: (a: string) => void; highlight?: string | null }) {
   const { t, ts } = useI18n();
+  // "Change this rule" (from Why?) lands here: scroll to the exact switch and make it glow.
+  useEffect(() => {
+    if (!highlight) return;
+    const id = setTimeout(() => {
+      const el = document.querySelector(`[data-rule="${CSS.escape(highlight)}"]`) ?? (highlight.startsWith('safety') ? document.getElementById('safety') : null);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-flash');
+    }, 400);
+    return () => clearTimeout(id);
+  }, [highlight, selected]);
   const { data: tasks } = useLoad<{ id: string; agent: string; goal: string; status: string; createdAt: string }[]>('/tasks');
   const today = new Date().toISOString().slice(0, 10);
   const doneToday = (agent: string) => data.feed.filter((g) => g.agent === agent && g.at.slice(0, 10) === today).reduce((n, g) => n + g.items.length, 0);
@@ -66,6 +78,7 @@ export function CrewView({ data, selected, onSelect }: { data: BridgeData; selec
         {!data.feed.some((g) => g.agent === sel) && <p className="muted small">{t('crew.nothing_yet')}</p>}
         <CrewSettings key={sel} agent={sel} />
       </div>
+      <SafetyPanel highlight={highlight} />
     </section>
   );
 }

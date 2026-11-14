@@ -38,16 +38,22 @@ export function formatTime(lang: string, iso: string | Date, timeZone?: string):
   return new Intl.DateTimeFormat(localeFor(lang), { hour: 'numeric', minute: '2-digit', timeZone }).format(new Date(iso));
 }
 
+export function formatDate(lang: string, iso: string | Date, timeZone?: string): string {
+  return new Intl.DateTimeFormat(localeFor(lang), { day: 'numeric', month: 'short', timeZone }).format(new Date(iso));
+}
+
 /**
  * Param values with a prefix are formatted for the viewer's language:
  *   "@some.key"         -> translated text
  *   "~t:<ISO time>"     -> local time, e.g. "4:00 pm"
  *   "~m:<CUR>:<amount>" -> money, e.g. "₹2,400"
+ *   "~d:<ISO time>"     -> local date, e.g. "14 Nov"
  */
-function formatParam(lang: string, v: string | number, opts: FormatOptions): string {
+export function formatParam(lang: string, v: string | number, opts: FormatOptions): string {
   if (typeof v !== 'string') return new Intl.NumberFormat(localeFor(lang)).format(v);
   if (v.startsWith('@')) return translate(lang, v.slice(1), {}, opts);
   if (v.startsWith('~t:')) return formatTime(lang, v.slice(3), opts.timeZone);
+  if (v.startsWith('~d:')) return formatDate(lang, v.slice(3), opts.timeZone);
   if (v.startsWith('~m:')) {
     const [, cur, amt] = v.split(':');
     return formatMoney(lang, cur, Number(amt));
