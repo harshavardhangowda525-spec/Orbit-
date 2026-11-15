@@ -9,7 +9,8 @@ export function apiUrl(): string {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) {
+  /** `details`: the rest of the server's error (e.g. the bill a duplicate matches). */
+  constructor(public status: number, public code: string, message: string, public details: Record<string, any> | null = null) {
     super(message);
   }
 }
@@ -151,14 +152,39 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
       if (!retried && getSupabase() && (await freshToken(true))) return api<T>(path, opts, true);
       sessionEnded();
     }
-    throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.');
+    throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Something went wrong. Please try again.', data?.error ?? null);
   }
   return data as T;
 }
 
 /** Download a file from the API (CSV/JSON exports) with the sign-in and admin session. */
-export async function apiDownload(path: string, filename: string) {
-  const headers = await authHeaders(false, path);
+/** Upload photos/PDFs (multipart). The browser sets the multipart content type. */
+export async function apiUpload<T = any>(path: string, files: Blob[], names: string[] = []): Promise<T> {
+  const headers = await authHeaders(true, path);
+  delete headers['content-type'];
+  const form = new FormData();
+  files.forEach((f, i) => form.append('files', f, names[i] ?? `photo-${i + 1}.${f.type === 'application/pdf' ? 'pdf' : 'jpg'}`));
+  let res: Response;
+  try {
+    res = await fetch(`${apiUrl()}${path}`, { method: 'POST', headers, body: form });
+  } catch {
+    throw new ApiError(0, 'unreachable', 'Orbit could not reach its server. Please try again.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data?.error?.code ?? 'error', data?.error?.message ?? 'Upload failed. Please try again.');
+  return data as T;
+}
+
+/** A stored photo/PDF as an object URL (for showing the bill behind an expense). */
+export async function apiBlobUrl(path: string): Promise<string> {
+  const headers = await authHeaders(true, path);
+  const res = await fetch(`${apiUrl()}${path}`, { headers });
+  if (!res.ok) throw new ApiError(res.status, 'error', 'Could not open the file.');
+  return URL.createObjectURL(await res.blob());
+}
+
+export async function apiDownload(path: string, filename: string, business = false) {
+  const headers = await authHeaders(business, path);
   const res = await fetch(`${apiUrl()}${path}`, { headers });
   if (!res.ok) {
     const d = await res.json().catch(() => ({}));

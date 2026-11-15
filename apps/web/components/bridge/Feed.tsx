@@ -27,7 +27,7 @@ export interface FeedGroup {
   traceId?: string | null;
 }
 
-const AGENT_NAMES: Record<string, string> = { aria: 'Aria', vox: 'Vox', nudge: 'Nudge', ledger: 'Ledger', spark: 'Spark', orbit: 'Orbit' };
+const AGENT_NAMES: Record<string, string> = { aria: 'Aria', vox: 'Vox', nudge: 'Nudge', ledger: 'Ledger', spark: 'Spark', khata: 'Khata', orbit: 'Orbit' };
 
 /** "What your Crew did": new rows slide in at the top; tap opens what the row is about. */
 export function CrewFeed({ groups, names, animate, onOpen }: { groups: FeedGroup[]; names: Record<string, string>; animate: boolean; onOpen: (g: FeedGroup['items'][number]) => void }) {

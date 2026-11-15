@@ -4,15 +4,16 @@ import type { Sentence } from '@orbit/shared';
 import { useI18n } from '@/lib/i18n';
 import { useCountUp, useCycle } from '@/lib/motion';
 
-export const AGENT_INITIAL: Record<string, string> = { aria: 'A', vox: 'V', nudge: 'N', ledger: 'L', spark: 'S', orbit: 'O' };
+export const AGENT_INITIAL: Record<string, string> = { aria: 'A', vox: 'V', nudge: 'N', ledger: 'L', spark: 'S', khata: 'K', orbit: 'O' };
 
-/** Lanes per spec 5.3: inner 22s (Aria, Ledger half a lap behind), middle 30s (Vox, Nudge apart), outer 40s (Spark). */
+/** Lanes per spec 5.3: inner 22s (Aria, Ledger half a lap behind), middle 30s (Vox, Nudge apart), outer 40s (Spark, Khata opposite). */
 const LANES: { agent: string; lap: number; r: number; delay: number }[] = [
   { agent: 'aria', lap: 22, r: 29.333, delay: 0 },
   { agent: 'ledger', lap: 22, r: 29.333, delay: -11 },
   { agent: 'vox', lap: 30, r: 38, delay: -4 },
   { agent: 'nudge', lap: 30, r: 38, delay: -19 },
   { agent: 'spark', lap: 40, r: 45.333, delay: -27 },
+  { agent: 'khata', lap: 40, r: 45.333, delay: -7 },
 ];
 
 export interface CrewMember {

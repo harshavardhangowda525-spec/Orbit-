@@ -7,6 +7,7 @@ import { useI18n } from '@/lib/i18n';
 import { AgentDot } from './Hero';
 import { timeAgo } from './Feed';
 import { openWhy } from '@/components/trust/WhySheet';
+import '@/components/khata/khata.css';
 
 export interface Decision {
   id: string;
@@ -42,11 +43,13 @@ export function NeedsYou({ cards, onDecided, onOpen, dayName }: { cards: Decisio
   const count = cards.length;
   const countLabel = count === 0 ? t('needs.all_clear') : t('needs.decisions', { count });
 
+  const [value, setValue] = useState('');
   async function decide(c: Decision, key: string) {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ open?: string | null }>(`/bridge/cards/${c.id}/decide`, { body: { option: key } });
+      const r = await api<{ open?: string | null }>(`/bridge/cards/${c.id}/decide`, { body: { option: key, ...(c.type === 'cash_checkin' && value ? { value } : {}) } });
+      setValue('');
       setOrder((o) => o.filter((id) => id !== c.id));
       onDecided();
       if (r.open) onOpen(r.open);
@@ -117,6 +120,13 @@ export function NeedsYou({ cards, onDecided, onOpen, dayName }: { cards: Decisio
               <button className="why-link" style={{ marginLeft: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => openWhy(card.traceId ?? null)} data-testid="card-why">{t('why.link')}</button>
             </div>
             <Situation card={card} />
+            {card.type === 'cash_checkin' && (
+              // "How much did you take in cash today?" — type it (or say it to Ask Orbit).
+              <label className="bill-amount" onPointerDown={(e) => e.stopPropagation()} style={{ fontSize: 22 }}>
+                <span>₹</span>
+                <input className="input" inputMode="decimal" placeholder="8,500" value={value} onChange={(e) => setValue(e.target.value)} aria-label={t('khata.checkin.amount')} data-testid="checkin-amount" />
+              </label>
+            )}
             <div className="actions">
               {card.options.map((o) => (
                 <button key={o.key} className={`btn ${o.style === 'primary' ? 'primary' : ''}`} disabled={busy} onClick={() => decide(card, o.key)}>

@@ -14,6 +14,8 @@ import { AppNav } from '@/components/AppNav';
 import { CommandBar, prefillCommand, type OrbitScreen } from '@/components/CommandBar';
 import { UndoBar } from '@/components/trust/UndoBar';
 import { WhySheetHost } from '@/components/trust/WhySheet';
+import { ScanBill } from '@/components/khata/ScanBill';
+import { KhataMini } from '@/components/khata/KhataMini';
 import { MoneyView } from '@/components/MoneyView';
 import { PlanView } from '@/components/PlanCrew';
 import { OrbitSystem, StatTiles, Ticker, type CrewMember, type TickerItem } from '@/components/bridge/Hero';
@@ -42,6 +44,7 @@ function Bridge() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>((VIEWS as readonly string[]).includes(params.get('view') ?? '') ? (params.get('view') as View) : 'today');
   const [agent, setAgent] = useState<string | null>(params.get('agent'));
+  const [scan, setScan] = useState(false);
   const visible = usePageVisible();
   const intro = useIntroOnce('orbit.bridge.intro', !!data);
   // Links within the app (e.g. "Change this rule" from a Why? sheet) change the URL without remounting.
@@ -168,6 +171,18 @@ function Bridge() {
       {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} /></div>}
       {data && <UndoBar held={data.held ?? []} onChanged={load} onEditAgain={(text) => prefillCommand(text)} />}
       <WhySheetHost />
+      {/* Scan bill: one tap from anywhere on The Bridge (Khata). */}
+      {data && !scan && view === 'today' && (
+        <button className="scan-fab" onClick={() => setScan(true)} data-testid="scan-fab" aria-label={t('khata.scan.button')}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
+          <span>{t('khata.scan.short')}</span>
+        </button>
+      )}
+      {scan && (
+        <div className="khata-sheet" role="dialog" aria-modal="true" aria-label={t('khata.scan.title')} onClick={(e) => e.target === e.currentTarget && setScan(false)}>
+          <ScanBill onDone={() => { setScan(false); load(); }} currency={data?.business.currency} />
+        </div>
+      )}
     </main>
   );
 }
@@ -290,6 +305,7 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         {data.mode === 'evening' && briefing}
         <NeedsYou cards={data.needsYou} onDecided={reload} onOpen={onOpen} dayName={dayName} />
         <div className="mid-earn" style={{ flexDirection: 'column' }}>
+          <KhataMini refresh={data} onOpen={() => openScreen('money')} />
           <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
         </div>
       </div>

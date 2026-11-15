@@ -4,6 +4,8 @@ import { signIn, SEED } from './helpers';
 test('the owner sets GST, writes an invoice with a live GST preview, and the customer opens it', async ({ page, context }) => {
   await signIn(page, SEED.salon);
   await page.goto('/bridge?view=money');
+  // Money opens on Khata's books; invoices are the second tab.
+  await page.getByTestId('tab-invoices').click();
   const money = page.getByTestId('money');
   await expect(money).toContainText('received today');
 

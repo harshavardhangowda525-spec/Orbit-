@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Books } from './khata/Books';
 import { computeInvoice, GST_RATES, gstinState } from '@orbit/shared';
 import { api, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
@@ -17,7 +18,22 @@ interface Summary { today: number; month: number; outstanding: number; overdue: 
 const FILTERS = ['all', 'unpaid', 'paid', 'draft'] as const;
 
 /** Money (Ledger): what came in, what is owed, invoices, and GST settings. */
+/** Money: Khata's books (earned, spent, kept) and Ledger's invoices. */
 export function MoneyView() {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<'books' | 'invoices'>(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'invoices' ? 'invoices' : 'books'));
+  return (
+    <section className="stack">
+      <nav className="seg money-tabs" aria-label={t('view.money')}>
+        <button className="chip" aria-current={tab === 'books'} onClick={() => setTab('books')} data-testid="tab-books">{t('khata.tab.books')}</button>
+        <button className="chip" aria-current={tab === 'invoices'} onClick={() => setTab('invoices')} data-testid="tab-invoices">{t('khata.tab.invoices')}</button>
+      </nav>
+      {tab === 'books' ? <Books /> : <Invoices />}
+    </section>
+  );
+}
+
+function Invoices() {
   const { t, money } = useI18n();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);

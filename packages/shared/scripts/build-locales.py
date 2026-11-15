@@ -859,6 +859,7 @@ import locales_trust
 locales_trust.add(k)
 import locales_phase4
 locales_phase4.add(k)
+locales_phase4.add_ui(k)
 
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}

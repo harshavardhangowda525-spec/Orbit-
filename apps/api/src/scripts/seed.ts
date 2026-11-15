@@ -230,6 +230,39 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
     }));
     await activity('aria', 'activity.aria.replying', { customer: 'Pooja', channel: '@channel.whatsapp' });
     await activity('nudge', 'activity.nudge.sending', {});
+    // Khata: three months of bills (rent, electricity, supplies, internet) and some cash sales.
+    const monthDate = (back: number, day: number) => {
+      const d = new Date();
+      d.setUTCDate(1);
+      d.setUTCMonth(d.getUTCMonth() - back);
+      d.setUTCDate(Math.min(day, new Date().getUTCDate() + (back ? 31 : 0)));
+      return d.toISOString().slice(0, 10);
+    };
+    const vendors: Record<string, string> = {};
+    for (const [name, cat, gstin] of [['Prestige Estates', 'rent', null], ['BESCOM', 'electricity', null], ['Sharma Beauty Supplies', 'supplies', '29ABCDE1234F1Z5'], ['Airtel Xstream', 'internet', null]] as const) {
+      vendors[name] = (await tx.one(`INSERT INTO vendors (name, name_key, gstin, default_category, confirmed_bills) VALUES ($1, lower($1), $2, $3, 3) RETURNING id`, [name, gstin, cat]))!.id;
+    }
+    for (const back of [3, 2, 1, 0]) {
+      const bills: [string, string, number, number, Record<string, number>][] = [
+        ['Prestige Estates', 'rent', 5, 18000, {}],
+        ['BESCOM', 'electricity', 8, back === 0 ? 4120 : 3400 + back * 60, {}],
+        ['Sharma Beauty Supplies', 'supplies', 3, back === 0 ? 5900 : 4720, back === 0 ? { cgst: 450, sgst: 450 } : { cgst: 360, sgst: 360 }],
+        ['Airtel Xstream', 'internet', 12, 1179, { cgst: 90, sgst: 90 }],
+      ];
+      for (const [vendor, cat, day, total, tax] of bills) {
+        const date = monthDate(back, day);
+        if (back === 0 && date > new Date().toISOString().slice(0, 10)) continue;
+        await tx.q(`INSERT INTO expenses (vendor_id, vendor_name, bill_number, bill_date, category, total, tax, status, source, confirmed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'scan', now())`, [
+          vendors[vendor], vendor, `${vendor.slice(0, 3).toUpperCase()}-${back}${day}`, date, cat, total, JSON.stringify(tax),
+        ]);
+      }
+      for (const day of [2, 9, 16, 23]) {
+        const date = monthDate(back, day);
+        if (back === 0 && date > new Date().toISOString().slice(0, 10)) continue;
+        await tx.q(`INSERT INTO revenue_entries (source, mode, amount, entry_date, via) VALUES ('cash', 'cash', $1, $2, 'checkin')`, [6200 + day * 40, date]);
+      }
+    }
+    await tx.q(`INSERT INTO recurring_bills (vendor_id, category, typical_amount, due_day, next_due) VALUES ($1, 'internet', 1179, 12, (date_trunc('month', current_date) + interval '1 month 11 days')::date)`, [vendors['Airtel Xstream']]);
     await tx.q(`INSERT INTO reviews (platform, author, rating, text, posted_at) VALUES ('google', 'Rahul', 2, 'Had to wait 30 minutes even with a booking.', now() - interval '3 hours'), ('google', 'Divya', 5, 'Anjali is the best! Lovely haircut.', now() - interval '6 days'), ('google', 'Arjun', 5, 'Clean, quick and friendly.', now() - interval '12 days')`);
     await card('aria', 'discount', 'card.discount', { customer: 'Priya', percent: 10 },
       [{ key: 'yes', label: 'card.option.yes', style: 'primary', outcome: 'approved' }, { key: 'no', label: 'card.option.no', style: 'secondary', outcome: 'rejected' }, { key: 'reply_myself', label: 'card.option.reply_myself', style: 'ghost', outcome: 'edited' }],

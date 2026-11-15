@@ -29,6 +29,7 @@
   --nudge: #ff8fc0; --nudge-ink: #4a0f2b;
   --ledger: #ffc857; --ledger-ink: #3d2a00;
   --spark: #ff9a7a; --spark-ink: #451200;
+  --khata: #4fc3d9; --khata-ink: #0b3440;
   --orbit: #5b4ce0; --orbit-ink: #ffffff;
 
   --r-hero: 28px;
@@ -151,6 +152,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .a-nudge { --c: var(--nudge); --ci: var(--nudge-ink); }
 .a-ledger { --c: var(--ledger); --ci: var(--ledger-ink); }
 .a-spark { --c: var(--spark); --ci: var(--spark-ink); }
+.a-khata { --c: var(--khata); --ci: var(--khata-ink); }
 .a-orbit { --c: var(--orbit); --ci: var(--orbit-ink); }
 
 /* ---------- Onboarding ---------- */

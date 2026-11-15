@@ -183,8 +183,13 @@
   .br.fit .mid-col .mid-earn { display: none; margin-top: auto; }
   .br.fit .mid-col > section[data-testid='needs-you'] { flex: 0 1 auto; }
 }
-@container mid (min-height: 560px) {
+@container mid (min-height: 660px) {
   .br.fit .mid-col .mid-earn { display: flex; }
+}
+/* Khata's card joins too, but only when there is room left for the decision card. */
+@media (min-width: 1024px) and (min-height: 620px) { .br.fit .mid-col .khata-card { display: none; } }
+@container mid (min-height: 800px) {
+  .br.fit .mid-col .khata-card { display: block; }
 }
 /* Phones and tablets: the earnings card sits in the page as before. */
 @media (max-width: 1023px), (max-height: 619px) {

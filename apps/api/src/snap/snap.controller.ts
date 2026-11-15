@@ -48,6 +48,17 @@ export class SnapController {
     return this.snap.read(t.businessId, b.kind, b.fileIds, t.userId);
   }
 
+  /** The services list for Details (with the photo each came from). */
+  @Get('services')
+  listServices(@CurrentTenant() t: Tenant) {
+    return this.db.withTenant(t.businessId, (tx) =>
+      tx.q(
+        `SELECT id, name, name_en AS "nameEn", category, price::float AS price, price_type AS "priceType", price_max::float AS "priceMax", duration_min AS "durationMin", source_file_ids AS "fileIds"
+         FROM services WHERE deleted_at IS NULL AND active ORDER BY sort_order, created_at`,
+      ),
+    );
+  }
+
   @Get(':id')
   get(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string) {
     return this.db.withTenant(t.businessId, async (tx) => {

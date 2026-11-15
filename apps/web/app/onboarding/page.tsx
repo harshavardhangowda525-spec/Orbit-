@@ -1,5 +1,6 @@
 'use client';
 
+import { SnapPriceList } from '@/components/snap/SnapPriceList';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BUSINESS_TYPES, WEEKDAYS, type WeeklyHours, type Weekday } from '@orbit/shared';
@@ -209,7 +210,13 @@ export default function Onboarding() {
       )}
 
       {step === 'services' && draft && (
-        <ServicesStep draft={draft} setDraft={setDraft} busy={busy} onNext={() => run(async () => { await saveEssentials(false); go('hours'); })} />
+        <ServicesStep
+          draft={draft} setDraft={setDraft} busy={busy}
+          onNext={() => run(async () => { await saveEssentials(false); go('hours'); })}
+          // Snap adds services on the server: keep what is on screen first, then show the new list.
+          beforeSnap={() => saveEssentials(false)}
+          afterSnap={async () => { const s = await load(); setDraft((d) => d && { ...d, services: s.services }); }}
+        />
       )}
 
       {step === 'hours' && draft && (
@@ -279,13 +286,22 @@ function ImportStep({ busy, run, onDone }: { busy: boolean; run: (fn: () => Prom
   );
 }
 
-function ServicesStep({ draft, setDraft, busy, onNext }: { draft: Draft; setDraft: (d: Draft) => void; busy: boolean; onNext: () => void }) {
+function ServicesStep({ draft, setDraft, busy, onNext, beforeSnap, afterSnap }: { draft: Draft; setDraft: (d: Draft) => void; busy: boolean; onNext: () => void; beforeSnap: () => Promise<void>; afterSnap: () => Promise<void> }) {
   const { t } = useI18n();
+  const [snapping, setSnapping] = useState(false);
   const set = (i: number, patch: Partial<Svc>) => setDraft({ ...draft, services: draft.services.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   return (
     <section className="stack">
       <h1>{t('ob.svc.title')}</h1>
       <p className="muted">{t('ob.svc.sub')}</p>
+      {snapping ? (
+        <SnapPriceList onDone={async () => { await afterSnap(); setSnapping(false); }} onCancel={() => setSnapping(false)} />
+      ) : (
+        <button className="btn snap-cta block" disabled={busy} onClick={async () => { await beforeSnap(); setSnapping(true); }} data-testid="ob-snap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.6" /></svg>
+          <span><b>{t('snap.snap')}</b><small>{t('snap.cta_sub')}</small></span>
+        </button>
+      )}
       <div className="svc svc-head"><span>{t('ob.svc.name')}</span><span>{t('ob.svc.minutes')}</span><span>{t('ob.svc.price')}</span><span /></div>
       {draft.services.map((s, i) => (
         <div className="svc" key={s.id ?? `new-${i}`}>
