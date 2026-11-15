@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { AiUnavailableError, type AiBlock, type AiMessage, type AiProvider, type AiRequest, type AiResponse, type AiTool } from './provider';
+import { AiUnavailableError, type AiBlock, type AiMessage, type AiProvider, type AiRequest, type AiResponse, type AiTool, type VisionRequest, type VisionResponse } from './provider';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-120b';
@@ -93,6 +93,11 @@ export function fromGroqChoice(choice: any): { content: AiBlock[]; stopReason: s
 export class GroqProvider implements AiProvider {
   readonly name = 'groq';
 
+  /** Vision uses Groq's image-capable model, whatever the text route says. */
+  see(req: VisionRequest): Promise<VisionResponse> {
+    return groqSee(req);
+  }
+
   /** `model` comes from the tier routing; without one, GROQ_MODEL / the default. */
   async complete(req: AiRequest, model?: string): Promise<AiResponse> {
     const key = process.env.GROQ_API_KEY;
@@ -155,6 +160,62 @@ export class GroqProvider implements AiProvider {
 }
 
 class ModelGone extends Error {}
+
+/** Groq models that can see images, best first. GROQ_VISION_MODEL overrides. */
+const VISION_PREFERRED = [/llama-4-maverick/, /llama-4-scout/, /vision|-vl\b|vl-/i];
+export function pickGroqVisionModel(ids: string[]): string | null {
+  for (const re of VISION_PREFERRED) {
+    const hit = ids.find((id) => re.test(id) && !NOT_CHAT.test(id));
+    if (hit) return hit;
+  }
+  return null;
+}
+let visionModel: { id: string; at: number } | null = null;
+
+/** Groq vision: images in, one JSON object out (JSON mode). PDFs are turned into page images on the phone first. */
+export async function groqSee(req: VisionRequest): Promise<VisionResponse> {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new AiUnavailableError('GROQ_API_KEY is not set');
+  if (req.images.some((i) => i.mime === 'application/pdf')) throw new AiUnavailableError('Groq cannot read PDFs directly');
+  let model = process.env.GROQ_VISION_MODEL || (visionModel && Date.now() - visionModel.at < 6 * 3600_000 ? visionModel.id : '');
+  if (!model) {
+    const picked = pickGroqVisionModel(await listModels(key));
+    if (!picked) throw new AiUnavailableError('No Groq model that can read images is available');
+    visionModel = { id: picked, at: Date.now() };
+    model = picked;
+  }
+  let res: Response;
+  try {
+    res = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_completion_tokens: req.maxTokens ?? 4000,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: req.system },
+          { role: 'user', content: [{ type: 'text', text: req.prompt }, ...req.images.map((i) => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.data}` } }))] },
+        ],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (e) {
+    throw new AiUnavailableError(`Groq unreachable: ${(e as Error).message}`);
+  }
+  const data: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.error?.message ?? `HTTP ${res.status}`;
+    if (MODEL_GONE.test(msg)) visionModel = null;
+    throw new AiUnavailableError(`Groq vision failed: ${msg}`);
+  }
+  return {
+    text: String(data.choices?.[0]?.message?.content ?? ''),
+    model: data.model ?? model,
+    usage: { input: data.usage?.prompt_tokens ?? 0, output: data.usage?.completion_tokens ?? 0, cacheRead: 0, cacheWrite: 0 },
+  };
+}
 
 async function listModels(key: string): Promise<string[]> {
   try {

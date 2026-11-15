@@ -21,6 +21,8 @@ export interface PlanLimits {
   tasksPerMonth: number | null;
   campaignsPerMonth: number | null;
   storageMb: number;
+  /** Khata: bills that can be scanned each month (null = no limit). */
+  billsPerMonth?: number | null;
   /** Past a limit: block (pause with an upgrade prompt), or use the Pay As You Go wallet when it has credit. */
   overage: 'block' | 'wallet' | 'charge';
   overagePrices?: Record<string, { INR: number; USD: number }>;
@@ -47,6 +49,21 @@ export interface PlanFeatures {
   multiBranch: boolean;
   googleBusinessProfile: boolean;
   prioritySupport: boolean;
+  /** How much of Khata (the books) the plan has; see khataAllows(). */
+  khataLevel?: KhataLevel;
+}
+
+export type KhataLevel = 'basic' | 'plus' | 'pro' | 'business';
+const KHATA_RANK: Record<KhataLevel, number> = { basic: 0, plus: 1, pro: 2, business: 3 };
+/** Which Khata features each level unlocks (Free = basic: scan bills, monthly totals only). */
+export const KHATA_FEATURES = {
+  breakdown: 'plus', cashLogging: 'plus', monthlyReport: 'plus',
+  insights: 'pro', recurringBills: 'pro', gstHelper: 'pro', excelExport: 'pro', gmailBills: 'pro',
+  accountantAccess: 'business', accountingExport: 'business',
+} as const satisfies Record<string, KhataLevel>;
+export type KhataFeature = keyof typeof KHATA_FEATURES;
+export function khataAllows(level: KhataLevel | undefined, feature: KhataFeature): boolean {
+  return KHATA_RANK[level ?? 'basic'] >= KHATA_RANK[KHATA_FEATURES[feature]];
 }
 
 export type PlanCode = 'free' | 'plus' | 'pro' | 'business' | 'enterprise';
@@ -73,9 +90,9 @@ export const DEFAULT_PLANS: PlanConfig[] = [
     sortOrder: 1,
     limits: {
       aiConversationsPerMonth: null, aiConversationsPerDay: 20, dailyCapMultiplier: 3, graceMessages: 10, assistantPerDay: 30,
-      staffCalendars: 1, locations: 1, callMinutesPerMonth: 0, tasksPerMonth: 100, campaignsPerMonth: 0, storageMb: 100, overage: 'block',
+      staffCalendars: 1, locations: 1, callMinutesPerMonth: 0, tasksPerMonth: 100, campaignsPerMonth: 0, storageMb: 100, billsPerMonth: 10, overage: 'block',
     },
-    features: { ...ALL_FLAGS_OFF, agents: ['orbit', 'aria'], powers: ['website_chat', 'chat_link'], aiTier: 'free' },
+    features: { ...ALL_FLAGS_OFF, agents: ['orbit', 'aria', 'khata'], powers: ['website_chat', 'chat_link'], aiTier: 'free', khataLevel: 'basic' },
   },
   {
     code: 'plus',
@@ -84,9 +101,9 @@ export const DEFAULT_PLANS: PlanConfig[] = [
     sortOrder: 2,
     limits: {
       aiConversationsPerMonth: 600, aiConversationsPerDay: null, dailyCapMultiplier: 3, graceMessages: 10, assistantPerDay: 100,
-      staffCalendars: 3, locations: 1, callMinutesPerMonth: 0, tasksPerMonth: 3000, campaignsPerMonth: 2, storageMb: 1000, overage: 'wallet', overagePrices: OVERAGE,
+      staffCalendars: 3, locations: 1, callMinutesPerMonth: 0, tasksPerMonth: 3000, campaignsPerMonth: 2, storageMb: 1000, billsPerMonth: 50, overage: 'wallet', overagePrices: OVERAGE,
     },
-    features: { ...ALL_FLAGS_OFF, agents: ['orbit', 'aria', 'nudge', 'ledger'], powers: BASE_POWERS, aiTier: 'standard', customDomain: true, orbitBranding: false, dailyBriefing: true, googleBusinessProfile: true },
+    features: { ...ALL_FLAGS_OFF, agents: ['orbit', 'aria', 'nudge', 'ledger', 'khata'], powers: BASE_POWERS, aiTier: 'standard', khataLevel: 'plus', customDomain: true, orbitBranding: false, dailyBriefing: true, googleBusinessProfile: true },
   },
   {
     code: 'pro',
@@ -95,10 +112,10 @@ export const DEFAULT_PLANS: PlanConfig[] = [
     sortOrder: 3,
     limits: {
       aiConversationsPerMonth: 2000, aiConversationsPerDay: null, dailyCapMultiplier: 3, graceMessages: 10, assistantPerDay: 300,
-      staffCalendars: 10, locations: 1, callMinutesPerMonth: 100, tasksPerMonth: 10000, campaignsPerMonth: 10, storageMb: 5000, overage: 'wallet', overagePrices: OVERAGE,
+      staffCalendars: 10, locations: 1, callMinutesPerMonth: 100, tasksPerMonth: 10000, campaignsPerMonth: 10, storageMb: 5000, billsPerMonth: null, overage: 'wallet', overagePrices: OVERAGE,
     },
     features: {
-      ...ALL_FLAGS_OFF, agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark'], powers: ['*'], aiTier: 'premium',
+      ...ALL_FLAGS_OFF, agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark', 'khata'], powers: ['*'], aiTier: 'premium', khataLevel: 'pro',
       customDomain: true, orbitBranding: false, dailyBriefing: true, voiceCommands: true, rewind: true, tomorrow: true, googleBusinessProfile: true,
     },
   },
@@ -109,10 +126,10 @@ export const DEFAULT_PLANS: PlanConfig[] = [
     sortOrder: 4,
     limits: {
       aiConversationsPerMonth: 6000, aiConversationsPerDay: null, dailyCapMultiplier: 3, graceMessages: 10, assistantPerDay: 1000,
-      staffCalendars: null, locations: null, callMinutesPerMonth: 300, tasksPerMonth: null, campaignsPerMonth: null, storageMb: 20000, overage: 'wallet', overagePrices: OVERAGE,
+      staffCalendars: null, locations: null, callMinutesPerMonth: 300, tasksPerMonth: null, campaignsPerMonth: null, storageMb: 20000, billsPerMonth: null, overage: 'wallet', overagePrices: OVERAGE,
     },
     features: {
-      agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark'], powers: ['*'], aiTier: 'premium',
+      agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark', 'khata'], powers: ['*'], aiTier: 'premium', khataLevel: 'business',
       customDomain: true, orbitBranding: false, dailyBriefing: true, voiceCommands: true, rewind: true, tomorrow: true, advancedReports: true, multiBranch: true, googleBusinessProfile: true, prioritySupport: true,
     },
   },
@@ -123,10 +140,10 @@ export const DEFAULT_PLANS: PlanConfig[] = [
     sortOrder: 5,
     limits: {
       aiConversationsPerMonth: null, aiConversationsPerDay: null, dailyCapMultiplier: 3, graceMessages: 10, assistantPerDay: null,
-      staffCalendars: null, locations: null, callMinutesPerMonth: 1000, tasksPerMonth: null, campaignsPerMonth: null, storageMb: 100000, overage: 'wallet', overagePrices: OVERAGE,
+      staffCalendars: null, locations: null, callMinutesPerMonth: 1000, tasksPerMonth: null, campaignsPerMonth: null, storageMb: 100000, billsPerMonth: null, overage: 'wallet', overagePrices: OVERAGE,
     },
     features: {
-      agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark'], powers: ['*'], aiTier: 'premium', customPricing: true, whiteLabel: true,
+      agents: ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark', 'khata'], powers: ['*'], aiTier: 'premium', khataLevel: 'business', customPricing: true, whiteLabel: true,
       customDomain: true, orbitBranding: false, dailyBriefing: true, voiceCommands: true, rewind: true, tomorrow: true, advancedReports: true, multiBranch: true, googleBusinessProfile: true, prioritySupport: true,
     },
   },

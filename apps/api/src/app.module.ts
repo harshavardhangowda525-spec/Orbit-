@@ -27,6 +27,9 @@ import { BillingModule } from './billing/billing.service';
 import { VoiceModule } from './voice/voice.module';
 import { AdminCoreModule } from './admin/admin-core.module';
 import { TrustModule } from './trust/trust.controller';
+import { FilesModule } from './files/files.service';
+import { SnapModule } from './snap/snap.controller';
+import { KhataModule } from './khata/khata.controller';
 
 @Controller()
 class HealthController {
@@ -45,6 +48,9 @@ class HealthController {
     JobsModule,
     ChannelsModule,
     TrustModule,
+    FilesModule,
+    SnapModule,
+    KhataModule,
     BookingsModule,
     KnowledgeModule,
     AiModule,

@@ -1,4 +1,4 @@
-import type { AiProvider, AiRequest, AiResponse, AiBlock } from './provider';
+import type { AiProvider, AiRequest, AiResponse, AiBlock, VisionRequest, VisionResponse } from './provider';
 
 type Script = (req: AiRequest, turn: number) => AiBlock[] | Promise<AiBlock[]>;
 
@@ -13,7 +13,19 @@ export class FakeProvider implements AiProvider {
   calls: AiRequest[] = [];
   private turn = 0;
 
+  /** Vision in tests: return the JSON text the "model" would. Without one, a small demo extraction. */
+  seeScript: ((req: VisionRequest) => string | Promise<string>) | null = null;
+  seen: VisionRequest[] = [];
+
+  async see(req: VisionRequest): Promise<VisionResponse> {
+    this.seen.push(req);
+    const text = this.seeScript ? await this.seeScript(req) : demoVision(req);
+    return { text, model: 'fake', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+  }
+
   reset() {
+    this.seeScript = null;
+    this.seen = [];
     this.script = null;
     this.calls = [];
     this.turn = 0;
@@ -78,4 +90,28 @@ function demoBrain(req: AiRequest): AiBlock[] {
   const svc = req.system.match(/service_id=([0-9a-f-]{36})/);
   if (/book|appointment|slot|available|free/i.test(q) && svc) return [toolUse('check_availability', { service_id: svc[1] })];
   return [toolUse('search_knowledge', { query: q.slice(0, 200) })];
+}
+
+/** Offline demo only (AI_PROVIDER=fake): a fixed, clearly sample extraction so the flow can be tried without a key. */
+function demoVision(req: VisionRequest): string {
+  const kind = /KIND: (\w+)/.exec(req.prompt)?.[1];
+  if (kind === 'bill') {
+    return JSON.stringify({
+      is_bill: true, readable: true, vendor_name: 'BESCOM', vendor_gstin: null, bill_number: 'DEMO-1042', bill_date: new Date().toISOString().slice(0, 10),
+      items: [{ name: 'Electricity charges', qty: 1, rate: 3450, amount: 3450 }], subtotal: 3450, cgst: 0, sgst: 0, igst: 0, cess: 0, total: 3450, payment_mode: null,
+      category_hint: 'electricity', confidence: { vendor_name: 0.95, bill_date: 0.9, total: 0.97, bill_number: 0.8 },
+    });
+  }
+  if (kind === 'settlement') return JSON.stringify({ is_settlement: true, readable: true, total: 4200, date: new Date().toISOString().slice(0, 10), mode: 'upi', confidence: 0.9 });
+  if (kind === 'card') return JSON.stringify({ readable: true, name: 'Glow Studio', phone: '+91 98450 12345', address: '12, 100 Feet Road, Indiranagar, Bengaluru', hours: null, confidence: { name: 0.95, phone: 0.9, address: 0.8 } });
+  if (kind === 'hours') return JSON.stringify({ readable: true, hours: { mon: [['10:00', '20:00']], tue: [['10:00', '20:00']], wed: [['10:00', '20:00']], thu: [['10:00', '20:00']], fri: [['10:00', '20:00']], sat: [['10:00', '21:00']], sun: [] }, confidence: 0.85 });
+  return JSON.stringify({
+    is_price_list: true, readable: true,
+    services: [
+      { name: 'Haircut', name_en: null, category: 'Hair', price_text: '₹350', duration_minutes: 30, description: null, language: 'en', confidence: 0.96 },
+      { name: 'Beard trim', name_en: null, category: 'Hair', price_text: '150/-', duration_minutes: null, description: null, language: 'en', confidence: 0.93 },
+      { name: 'Hair spa', name_en: null, category: 'Hair', price_text: '₹800 onwards', duration_minutes: 60, description: null, language: 'en', confidence: 0.88 },
+      { name: 'Facial', name_en: null, category: 'Skin', price_text: '1,200', duration_minutes: null, description: null, language: 'en', confidence: 0.62 },
+    ],
+  });
 }

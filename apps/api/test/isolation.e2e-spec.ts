@@ -1,3 +1,4 @@
+import { AGENT_KEYS } from '@orbit/shared';
 /**
  * DATA ISOLATION (non-negotiable principle 2).
  *
@@ -176,7 +177,7 @@ describe('data isolation between businesses', () => {
     const convs = (await a.get('/conversations').expect(200)).body.map((c: any) => c.id);
     expect(convs).toEqual([A.conversationId]);
     const crew = (await a.get('/crew').expect(200)).body;
-    expect(crew).toHaveLength(6);
+    expect(crew.map((c: any) => c.agent).sort()).toEqual([...AGENT_KEYS].sort()); // A's own Crew, every member once
 
     const bridge = (await a.get('/bridge').expect(200)).body;
     const json = JSON.stringify(bridge);

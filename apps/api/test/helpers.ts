@@ -55,6 +55,12 @@ export function api(app: NestExpressApplication, token: string, businessId?: str
     put: (u: string, b: object = {}) => h(request(s).put(u)).send(b),
     patch: (u: string, b: object = {}) => h(request(s).patch(u)).send(b),
     delete: (u: string) => h(request(s).delete(u)),
+    /** Multipart upload, e.g. photos for Snap / Khata. */
+    upload: (u: string, files: { data: Buffer; name: string; type: string }[]) => {
+      let r = h(request(s).post(u));
+      for (const f of files) r = r.attach('files', f.data, { filename: f.name, contentType: f.type });
+      return r;
+    },
   };
 }
 
@@ -136,5 +142,11 @@ function withAdmin(app: NestExpressApplication, token: string, adminToken: strin
     put: (u: string, b: object = {}) => h(request(s).put(u)).send(b),
     patch: (u: string, b: object = {}) => h(request(s).patch(u)).send(b),
     delete: (u: string) => h(request(s).delete(u)),
+    /** Multipart upload, e.g. photos for Snap / Khata. */
+    upload: (u: string, files: { data: Buffer; name: string; type: string }[]) => {
+      let r = h(request(s).post(u));
+      for (const f of files) r = r.attach('files', f.data, { filename: f.name, contentType: f.type });
+      return r;
+    },
   };
 }

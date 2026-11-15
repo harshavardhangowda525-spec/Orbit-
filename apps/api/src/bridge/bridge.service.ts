@@ -8,6 +8,7 @@ import { ConversationsService } from '../inbox/conversations.service';
 import { UsageService } from '../billing/usage.service';
 import { groupFeed, type FeedItem } from './feed-group';
 import { HoldService } from '../trust/hold.service';
+import { KhataService } from '../khata/khata.service';
 
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -17,7 +18,7 @@ export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour 
 
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService, private readonly khata: KhataService) {}
 
   /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
   async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
@@ -43,8 +44,13 @@ export class BridgeService {
            (SELECT count(*) / 4.0 FROM bookings, b, generate_series(1, 4) k
               WHERE start_at >= b.start - make_interval(days => 7 * k) AND start_at < b.start - make_interval(days => 7 * k) + interval '1 day'
                 AND status <> 'cancelled' AND deleted_at IS NULL) AS usual_bookings,
-           (SELECT COALESCE(sum(amount), 0) FROM payments, b WHERE status = 'paid' AND paid_at >= b.start AND paid_at < b.start + interval '1 day') AS money_today,
-           (SELECT COALESCE(sum(amount), 0) FROM payments, b WHERE status = 'paid' AND paid_at >= b.start - interval '1 day' AND paid_at < b.start) AS money_yesterday,
+           -- Money in: payments Orbit recorded plus cash sales logged with Khata (each counted once).
+           (SELECT COALESCE(sum(amount), 0) FROM payments, b WHERE status = 'paid' AND paid_at >= b.start AND paid_at < b.start + interval '1 day')
+             + (SELECT COALESCE(sum(amount), 0) FROM revenue_entries WHERE deleted_at IS NULL AND entry_date = ($1::timestamptz AT TIME ZONE $2)::date) AS money_today,
+           (SELECT COALESCE(sum(amount), 0) FROM payments, b WHERE status = 'paid' AND paid_at >= b.start - interval '1 day' AND paid_at < b.start)
+             + (SELECT COALESCE(sum(amount), 0) FROM revenue_entries WHERE deleted_at IS NULL AND entry_date = ($1::timestamptz AT TIME ZONE $2)::date - 1) AS money_yesterday,
+           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND bill_date = ($1::timestamptz AT TIME ZONE $2)::date) AS spent_today,
+           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND bill_date = ($1::timestamptz AT TIME ZONE $2)::date - 1) AS spent_yesterday,
            (SELECT COALESCE(sum(amount), 0) / 4.0 FROM payments, b, generate_series(1, 4) k
               WHERE status = 'paid' AND paid_at >= b.start - make_interval(days => 7 * k) AND paid_at < b.start - make_interval(days => 7 * k) + interval '1 day') AS usual_money,
            (SELECT count(*) FROM conversations WHERE status = 'waiting_staff') AS people_waiting,
@@ -125,12 +131,14 @@ export class BridgeService {
               { key: 'brief.bookings_today', params: { count: num(s.bookings_today) } },
               ...(s.next_booking_at ? [{ key: 'brief.next_booking', params: { time: `~t:${new Date(s.next_booking_at).toISOString()}` } }] : []),
               { key: 'brief.money_yesterday', params: { amount: money(num(s.money_yesterday)) } },
+              ...(num(s.spent_yesterday) > 0 ? [{ key: 'brief.spent_yesterday', params: { amount: money(num(s.spent_yesterday)) } }] : []),
               { key: 'brief.leads_yesterday', params: { count: num(s.leads_yesterday) } },
               ...(num(s.unpaid_invoices) > 0 ? [{ key: 'brief.unpaid', params: { count: num(s.unpaid_invoices), amount: money(num(s.unpaid_amount)) } }] : []),
             ]
           : [
               { key: 'brief.completed_today', params: { count: num(s.completed_today) } },
               { key: 'brief.money_today', params: { amount: money(num(s.money_today)) } },
+              ...(num(s.spent_today) > 0 ? [{ key: 'brief.spent_today', params: { amount: money(num(s.spent_today)) } }] : []),
               { key: 'brief.leads_today', params: { count: num(s.leads_today) } },
               ...(num(s.no_shows_today) > 0 ? [{ key: 'brief.no_shows', params: { count: num(s.no_shows_today) } }] : []),
             ];
@@ -197,7 +205,7 @@ export class BridgeService {
     if (!recent) await tx.q(`INSERT INTO pulse_snapshots (score, explanation, inputs) VALUES ($1, $2, $3)`, [score, JSON.stringify(explanation), JSON.stringify(inputs)]);
   }
 
-  async decideCard(businessId: string, userId: string, cardId: string, optionKey: string) {
+  async decideCard(businessId: string, userId: string, cardId: string, optionKey: string, value?: string) {
     return this.db.withTenant(businessId, async (tx) => {
       const card = await tx.one(`SELECT * FROM approval_cards WHERE id = $1 FOR UPDATE`, [cardId]);
       if (!card) throw notFound('That card is no longer here.');
@@ -218,6 +226,10 @@ export class BridgeService {
         await this.usage.decideResume(tx, card.context?.conversationIds ?? [], option.outcome === 'approved');
       } else if (card.type === 'discount' && option.outcome === 'edited' && card.context?.conversationId) {
         open = `/inbox/${card.context.conversationId}`;
+      } else if (card.type === 'cash_checkin' && option.outcome === 'approved') {
+        // "How much did you take in cash today?" — the answer is that day's cash sale.
+        if (!value) throw badRequest('amount', 'Please enter the amount, e.g. 8,500.');
+        await this.khata.logSale(tx, { amount: value, mode: 'cash', date: card.context?.date, via: 'checkin' }, userId);
       } else if (card.type === 'correction' && option.outcome === 'approved') {
         // The correction goes through the same Undo window.
         await this.hold.sendCorrection(tx, card, userId);
@@ -234,7 +246,7 @@ export class BridgeService {
         );
       }
       const agent = await tx.one(`SELECT display_name FROM agents WHERE agent_key = $1`, [card.agent_key]);
-      if (!String(card.type).startsWith('limit_')) await postFeed(tx, 'orbit', `card_${option.outcome}`, { key: `feed.orbit.card_${option.outcome}`, params: { agent: agent?.display_name ?? card.agent_key } }, { entityType: 'approval_card', entityId: cardId });
+      if (!String(card.type).startsWith('limit_') && card.type !== 'cash_checkin') await postFeed(tx, 'orbit', `card_${option.outcome}`, { key: `feed.orbit.card_${option.outcome}`, params: { agent: agent?.display_name ?? card.agent_key } }, { entityType: 'approval_card', entityId: cardId });
       liveToBusiness(tx, { type: 'card.decided', data: { id: cardId } });
       return { ok: true, status: option.outcome, open };
     }, userId);

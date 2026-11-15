@@ -48,12 +48,14 @@ export function formatDate(lang: string, iso: string | Date, timeZone?: string):
  *   "~t:<ISO time>"     -> local time, e.g. "4:00 pm"
  *   "~m:<CUR>:<amount>" -> money, e.g. "₹2,400"
  *   "~d:<ISO time>"     -> local date, e.g. "14 Nov"
+ *   "~mo:<YYYY-MM>"     -> month name, e.g. "October"
  */
 export function formatParam(lang: string, v: string | number, opts: FormatOptions): string {
   if (typeof v !== 'string') return new Intl.NumberFormat(localeFor(lang)).format(v);
   if (v.startsWith('@')) return translate(lang, v.slice(1), {}, opts);
   if (v.startsWith('~t:')) return formatTime(lang, v.slice(3), opts.timeZone);
   if (v.startsWith('~d:')) return formatDate(lang, v.slice(3), opts.timeZone);
+  if (v.startsWith('~mo:')) return new Intl.DateTimeFormat(localeFor(lang), { month: 'long', timeZone: 'UTC' }).format(new Date(`${v.slice(4)}-15T00:00:00Z`));
   if (v.startsWith('~m:')) {
     const [, cur, amt] = v.split(':');
     return formatMoney(lang, cur, Number(amt));

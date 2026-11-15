@@ -20,11 +20,18 @@ export interface AiResponse {
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
+/** Reading photos (price lists, bills): images in, one JSON object out. */
+export interface VisionImage { mime: string; data: string } // base64
+export interface VisionRequest { system: string; prompt: string; images: VisionImage[]; maxTokens?: number }
+export interface VisionResponse { text: string; model: string; usage: AiResponse['usage'] }
+
 /** Swappable provider so the rest of Orbit never talks to an LLM SDK directly. */
 export interface AiProvider {
   readonly name: string;
   /** `model` is chosen by the tier routing; providers fall back to their own default without it. */
   complete(req: AiRequest, model?: string): Promise<AiResponse>;
+  /** Vision: providers that can read images. `model` is only a hint (text models may not see). */
+  see?(req: VisionRequest, model?: string): Promise<VisionResponse>;
 }
 
 export class AiUnavailableError extends Error {}
@@ -90,6 +97,34 @@ export class ClaudeProvider implements AiProvider {
       if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.InternalServerError || e instanceof Anthropic.APIConnectionError) {
         throw new AiUnavailableError(`AI provider unavailable: ${(e as Error).message}`);
       }
+      throw e;
+    }
+  }
+
+  async see(req: VisionRequest, model?: string): Promise<VisionResponse> {
+    if (!process.env.ANTHROPIC_API_KEY) throw new AiUnavailableError('ANTHROPIC_API_KEY is not set');
+    try {
+      const r = await this.client.messages.create({
+        model: model && model.startsWith('claude') ? model : runtime.aiModel,
+        max_tokens: req.maxTokens ?? 4000,
+        system: req.system,
+        messages: [{
+          role: 'user',
+          content: [
+            ...req.images.map((i) =>
+              i.mime === 'application/pdf'
+                ? ({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: i.data } } as any)
+                : ({ type: 'image', source: { type: 'base64', media_type: i.mime as any, data: i.data } } as any),
+            ),
+            { type: 'text', text: req.prompt },
+          ],
+        }],
+      } as any);
+      const text = (r.content as any[]).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      return { text, model: r.model, usage: { input: r.usage.input_tokens ?? 0, output: r.usage.output_tokens ?? 0, cacheRead: 0, cacheWrite: 0 } };
+    } catch (e) {
+      if (e instanceof Anthropic.AuthenticationError) throw new AiUnavailableError('AI key missing or invalid');
+      if (e instanceof Anthropic.RateLimitError || e instanceof Anthropic.InternalServerError || e instanceof Anthropic.APIConnectionError) throw new AiUnavailableError(`AI provider unavailable: ${(e as Error).message}`);
       throw e;
     }
   }

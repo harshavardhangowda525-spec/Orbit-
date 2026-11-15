@@ -11,3 +11,5 @@ export * from './availability';
 export * from './gst';
 export * from './ai-tiers';
 export * from './trust';
+export * from './price-parse';
+export * from './khata';

@@ -2,8 +2,9 @@ import { HttpException } from '@nestjs/common';
 
 /** Plain-language error with a stable code the web app can translate. */
 export class AppError extends HttpException {
-  constructor(status: number, code: string, message: string) {
-    super({ error: { code, message } }, status);
+  /** `details` go alongside the code and message (e.g. the bill a duplicate matches). */
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+    super({ error: { code, message, ...(details ?? {}) } }, status);
   }
 }
 

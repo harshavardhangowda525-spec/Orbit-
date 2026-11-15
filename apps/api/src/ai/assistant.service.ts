@@ -6,6 +6,7 @@ import { ChannelsService } from '../channels/channels.service';
 import { postFeed } from '../common/feed';
 import { agentName, fact, firstName } from '../trust/trace';
 import { HoldService } from '../trust/hold.service';
+import { KhataService } from '../khata/khata.service';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
 import { UsageService } from '../billing/usage.service';
@@ -188,6 +189,25 @@ const OWNER_TOOLS = {
       return { shown: i.screen };
     },
   }),
+  books_summary: tool({
+    description:
+      "Khata's books for a month (default this month): revenue by source (online payments, paid at the counter, cash), expenses by category, profit, last month's numbers, GST paid on bills. Use for questions like 'How much did I spend on stock this month?', 'What was my profit in October?', 'Show my GST paid on bills'. Always say the numbers are based on bills and sales added to Orbit, and for tax questions suggest confirming with their accountant. Never give tax or legal advice.",
+    input: z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }),
+    schema: obj({ month: { type: 'string', description: 'YYYY-MM. Omit for this month.' } }),
+    // Runs through AssistantService.books (needs Khata).
+    async run() {
+      return { error: 'unavailable' };
+    },
+  }),
+  log_sale: tool({
+    description:
+      "Record money the business took that Orbit cannot see (cash, UPI to their own QR, card machine), e.g. 'aaj 8,500 cash aaya' or 'add a cash sale of 1200'. Only when the owner clearly says an amount was received. date is YYYY-MM-DD local (omit for today).",
+    input: z.object({ amount: z.number().positive().max(100_000_000), mode: z.enum(['cash', 'upi', 'card', 'other']).default('cash'), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), note: z.string().max(200).optional() }),
+    schema: obj({ amount: { type: 'number' }, mode: { type: 'string', enum: ['cash', 'upi', 'card', 'other'] }, date: { type: 'string', description: 'YYYY-MM-DD, omit for today' }, note: { type: 'string' } }, ['amount']),
+    async run() {
+      return { error: 'unavailable' };
+    },
+  }),
   message_group: tool({
     description:
       "Send the same message to a group of customers (e.g. everyone booked tomorrow, or customers who owe money). First call with confirmed=false to get a preview (how many people, sample names, channel, cost) and show it to the owner; only call again with confirmed=true after the owner clearly says yes. It waits 2 minutes before sending so the owner can press Undo. Write {{name}} where each customer's first name should go.",
@@ -243,6 +263,7 @@ export class AssistantService {
     private readonly channels: ChannelsService,
     private readonly usage: UsageService,
     private readonly hold: HoldService,
+    private readonly khata: KhataService,
   ) {}
 
   async run(businessId: string, userId: string, input: AssistantInput, emit: (e: AssistantEvent) => void): Promise<void> {
@@ -337,6 +358,11 @@ export class AssistantService {
       const ctx: Ctx = { tx, userId, taskId, command, language, tz: biz.timezone, currency: biz.currency, emit };
       if (name === 'message_customer') return this.messageCustomer(ctx, parsed.data);
       if (name === 'message_group') return this.messageGroup(ctx, parsed.data);
+      if (name === 'books_summary') return this.books(ctx, parsed.data);
+      if (name === 'log_sale') {
+        ctx.emit({ type: 'open', screen: 'money' });
+        return this.khata.logSale(tx, { ...parsed.data, via: 'app' }, userId).then((r) => ({ saved: true, amount: formatMoney(ctx.language, ctx.currency, r.amount), date: r.date, note: 'Tell the owner it is saved; they can undo it in Money.' }));
+      }
       return def.run(ctx, parsed.data);
     }, userId);
   }
@@ -358,6 +384,21 @@ export class AssistantService {
     });
     ctx.emit({ type: 'held', id: h.id, holdUntil: h.holdUntil.toISOString() });
     return { queued: true, sends_in_seconds: h.seconds, note: `Tell the owner it goes out in ${h.seconds} seconds and they can press Undo until then.` };
+  }
+
+  /** The books, in the owner's language and currency (owners and managers only reach Ask Orbit). */
+  private async books(ctx: Ctx, i: { month?: string }) {
+    const s = await this.khata.summary(ctx.tx, i.month);
+    const m = (n: number) => formatMoney(ctx.language, s.currency, n);
+    return {
+      month: s.month,
+      revenue: { online: m(s.revenue.online), paid_at_counter: m(s.revenue.counter), cash_and_other: m(s.revenue.cash), total: m(s.revenue.total) },
+      expenses: { total: m(s.expenses.total), by_category: s.expenses.byCategory.map((c) => ({ category: c.category, amount: m(c.amount), bills: c.count })) },
+      profit: m(s.profit),
+      last_month: { month: s.last.month, revenue: m(s.last.revenue), expenses: m(s.last.expenses), profit: m(s.last.profit) },
+      gst_paid_on_bills: s.gst ? m(s.gst.paidOnBills) : 'not on this plan',
+      note: 'Based on bills and sales added to Orbit. Not tax advice: for tax, suggest confirming with their accountant.',
+    };
   }
 
   /** Who a group message would reach, from the business's own data. */

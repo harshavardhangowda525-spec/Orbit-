@@ -17,7 +17,7 @@ export const BUSINESS_TYPES = [
 ] as const;
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
-export const AGENT_KEYS = ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark'] as const;
+export const AGENT_KEYS = ['orbit', 'aria', 'vox', 'nudge', 'ledger', 'spark', 'khata'] as const;
 export type AgentKey = (typeof AGENT_KEYS)[number];
 
 export const ROLES = ['owner', 'manager', 'staff'] as const;

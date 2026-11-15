@@ -181,3 +181,25 @@ test('every Why? template is grounded: no fixed numbers or names outside the tra
 test('no trace details: the sheet says so instead of guessing', () => {
   for (const l of LANGUAGES) assert.ok(translate(l.code, 'why.no_details').length > 5);
 });
+
+// ---- Indian price formats (Snap and Khata) ----
+import { parseIndianPrice } from './price-parse';
+
+test('prices are read the way Indian boards and bills write them', () => {
+  const p = (s: string) => parseIndianPrice(s);
+  assert.deepEqual(p('₹350'), { price: 350, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('350/-'), { price: 350, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('Rs. 1,200/-'), { price: 1200, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('1,20,000'), { price: 120000, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('₹1.5 lakh'), { price: 150000, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('2L'), { price: 200000, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('350 - 500'), { price: 350, priceMax: 500, type: 'range' });
+  assert.deepEqual(p('from ₹500'), { price: 500, priceMax: null, type: 'from' });
+  assert.deepEqual(p('500 onwards'), { price: 500, priceMax: null, type: 'from' });
+  assert.deepEqual(p('500+'), { price: 500, priceMax: null, type: 'from' });
+  assert.deepEqual(p('₹800/hr'), { price: 800, priceMax: null, type: 'per_hour' });
+  assert.deepEqual(p('रु. ३५०'), { price: 350, priceMax: null, type: 'fixed' });
+  assert.deepEqual(p('ರೂ ೪೫೦'), { price: 450, priceMax: null, type: 'fixed' });
+  assert.equal(p('Price on request'), null);
+  assert.equal(p(''), null);
+});

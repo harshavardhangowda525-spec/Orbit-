@@ -85,6 +85,14 @@ export const AGENTS: Record<AgentKey, AgentDef> = {
     tools: ['draft_post', 'schedule_post', 'build_segment', 'create_campaign', 'create_offer', 'read_ad_leads', 'request_task'],
     powers: ['instagram', 'facebook', 'google_business_profile', 'youtube', 'linkedin', 'meta_ads', 'google_ads', 'whatsapp', 'gmail'],
   },
+  khata: {
+    key: 'khata',
+    displayName: 'Khata',
+    roleKey: 'agent.khata.role',
+    personality: 'friendly',
+    tools: ['read_bill', 'save_expense', 'log_sale', 'books_summary', 'request_task'],
+    powers: ['gmail', 'whatsapp', 'tally', 'zoho_books', 'quickbooks', 'google_sheets'],
+  },
 };
 
 export function agentMayUseTool(agent: AgentKey, tool: string): boolean {

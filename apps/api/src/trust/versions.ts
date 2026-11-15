@@ -12,6 +12,8 @@ const ENTITIES = {
   agent: { table: 'agents', key: 'agent_key', cols: ['enabled', 'display_name', 'personality', 'auto_approval_rules'] },
   knowledge_item: { table: 'knowledge_items', key: 'id', cols: ['type', 'title', 'content', 'active', 'deleted_at'] },
   profile: { table: 'business_profiles', key: 'business_id', cols: ['review_url', 'hold_seconds', 'review_before_send'] },
+  expense: { table: 'expenses', key: 'id', cols: ['category', 'total', 'bill_date', 'vendor_name', 'status', 'deleted_at'] },
+  revenue_entry: { table: 'revenue_entries', key: 'id', cols: ['amount', 'mode', 'entry_date', 'note', 'deleted_at'] },
 } as const;
 export type VersionedEntity = keyof typeof ENTITIES;
 const JSON_COLS = new Set(['auto_approval_rules', 'hold_seconds', 'review_before_send']);
@@ -49,9 +51,11 @@ export async function revertVersion(tx: Tx, id: string, userId: string | null) {
   const e = ENTITIES[v.entity_type as VersionedEntity];
   if (!e) throw badRequest('cannot_undo', 'This change cannot be undone.');
   if (v.before == null) {
-    // The change created it (e.g. a new FAQ): undoing removes it.
-    if (v.entity_type !== 'knowledge_item') throw badRequest('cannot_undo', 'This change cannot be undone.');
-    await tx.q(`UPDATE knowledge_items SET deleted_at = now() WHERE id = $1`, [v.entity_id]);
+    // The change created it (a new FAQ, bill or sale): undoing removes it.
+    if (v.entity_type === 'knowledge_item') await tx.q(`UPDATE knowledge_items SET deleted_at = now() WHERE id = $1`, [v.entity_id]);
+    else if (v.entity_type === 'expense') await tx.q(`UPDATE expenses SET status = 'deleted', deleted_at = now() WHERE id = $1`, [v.entity_id]);
+    else if (v.entity_type === 'revenue_entry') await tx.q(`UPDATE revenue_entries SET deleted_at = now() WHERE id = $1`, [v.entity_id]);
+    else throw badRequest('cannot_undo', 'This change cannot be undone.');
   } else {
     const cols = e.cols.filter((c) => c in v.before);
     const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');

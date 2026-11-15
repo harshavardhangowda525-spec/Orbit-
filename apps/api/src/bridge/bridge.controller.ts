@@ -8,7 +8,7 @@ import { CurrentTenant, Roles, TenantGuard } from '../auth/guards';
 import type { Tenant } from '../auth/types';
 import { BridgeService } from './bridge.service';
 
-const Decide = z.object({ option: z.string().min(1).max(40) });
+const Decide = z.object({ option: z.string().min(1).max(40), value: z.string().trim().max(60).optional() });
 const Command = z.object({
   text: z.string().trim().min(1).max(1000),
   history: z.array(z.object({ role: z.enum(['owner', 'orbit']), text: z.string().max(4000) })).max(20).default([]),
@@ -31,7 +31,7 @@ export class BridgeController {
   @Roles('owner', 'manager')
   @Post('cards/:id/decide')
   decide(@CurrentTenant() t: Tenant, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(Decide)) body: z.infer<typeof Decide>) {
-    return this.bridge.decideCard(t.businessId, t.userId, id, body.option);
+    return this.bridge.decideCard(t.businessId, t.userId, id, body.option, body.value);
   }
 
   /**

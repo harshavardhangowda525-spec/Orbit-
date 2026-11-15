@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AI_TIERS, TIER_RANK, resolveRouting, type AgentKey, type AiProviderKey, type AiRoute, type AiRouting, type AiTaskType, type AiTier } from '@orbit/shared';
 import { DbService } from '../db/db.service';
 import { runtime } from '../config';
-import { AiUnavailableError, ClaudeProvider, costOf, type AiProvider, type AiRequest, type AiResponse } from './provider';
+import { AiUnavailableError, ClaudeProvider, costOf, type AiProvider, type AiRequest, type AiResponse, type VisionRequest, type VisionResponse } from './provider';
 import { FakeProvider } from './fake.provider';
 import { GroqProvider } from './groq.provider';
 import { logger } from '../logger';
@@ -123,6 +123,33 @@ export class AiService {
       }
     }
     throw new AiUnavailableError(`Orbit could not reach any AI provider (${(lastError as Error)?.message ?? 'no route'})`);
+  }
+
+  /**
+   * Read photos (price lists, bills, screenshots). Same tier routing and fallbacks as
+   * complete(); each provider uses its own image-capable model. Logged like any AI call.
+   */
+  async see(businessId: string, agent: AgentKey, req: VisionRequest, ref: { taskId?: string } = {}): Promise<VisionResponse> {
+    const task: AiTaskType = 'simple';
+    const tier = await this.tierOf(businessId);
+    const chain = this.chainFor(await this.currentRouting(), tier, task);
+    const tried = new Set<string>();
+    let lastError: unknown = null;
+    for (const [i, step] of chain.entries()) {
+      const provider = this.providers[step.route.provider];
+      if (!provider?.see || tried.has(provider.name)) continue;
+      tried.add(provider.name);
+      try {
+        const res = await provider.see(req, step.route.model);
+        await this.log(businessId, agent, ref, { provider: provider.name, tier: step.tier, task, failover: i > 0, res: { content: [], stopReason: 'end_turn', model: res.model, usage: res.usage } });
+        return res;
+      } catch (e) {
+        lastError = e;
+        logger.warn(`AI vision attempt failed (${step.route.provider}): ${(e as Error).message}`, 'AI');
+        await this.log(businessId, agent, ref, { provider: step.route.provider, tier: step.tier, task, failover: i > 0, model: 'vision', error: (e as Error).message }).catch(() => undefined);
+      }
+    }
+    throw new AiUnavailableError(`Orbit could not read the photo (${(lastError as Error)?.message ?? 'no route'})`);
   }
 
   private async log(

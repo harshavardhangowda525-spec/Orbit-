@@ -245,7 +245,8 @@ export async function applyTemplate(tx: Tx, t: BusinessTemplate, features: PlanF
     await tx.q(`INSERT INTO sequences (name, trigger, steps, owner_agent, created_by) VALUES ($1, $2, $3, $4, $5)`, [s.name, s.trigger, JSON.stringify(s.steps), s.ownerAgent, userId]);
   }
   for (const key of AGENT_KEYS) {
-    const enabled = (t.agentSettings[key]?.enabled ?? key === 'orbit') && features.agents.includes(key);
+    // Orbit and Khata (the books) start on for everyone; the others follow the business template.
+    const enabled = (t.agentSettings[key]?.enabled ?? (key === 'orbit' || key === 'khata')) && features.agents.includes(key);
     await tx.q(`INSERT INTO agents (agent_key, display_name, personality, enabled, created_by) VALUES ($1, $2, $3, $4, $5)`, [key, AGENTS[key].displayName, AGENTS[key].personality, enabled, userId]);
   }
 }

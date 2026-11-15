@@ -20,6 +20,7 @@
     "@nestjs/throttler": "^6.0.0",
     "@orbit/shared": "0.1.0",
     "bullmq": "^6.7.2",
+    "exceljs": "^4.4.0",
     "google-auth-library": "^9.14.0",
     "ioredis": "^6.0.0",
     "jose": "^5.10.0",

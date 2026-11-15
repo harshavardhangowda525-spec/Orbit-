@@ -857,6 +857,8 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import locales_trust
 locales_trust.add(k)
+import locales_phase4
+locales_phase4.add(k)
 
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}
