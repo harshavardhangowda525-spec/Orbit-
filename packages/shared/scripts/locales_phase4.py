@@ -171,6 +171,7 @@ def add_ui(k):
   k('khata.bill.save','Save','सेव करें','ಉಳಿಸಿ')
   k('khata.bill.saved','Saved the {{amount}} bill.','{{amount}} का बिल सेव हुआ।','{{amount}} ಬಿಲ್ ಉಳಿಸಲಾಗಿದೆ.')
   k('khata.bill.saved_auto','Saved the {{amount}} bill automatically (your rule for this vendor).','{{amount}} का बिल अपने-आप सेव हुआ (इस विक्रेता के लिए आपका नियम)।','{{amount}} ಬಿಲ್ ಸ್ವಯಂ ಉಳಿಸಲಾಗಿದೆ (ಈ ಮಾರಾಟಗಾರರ ನಿಮ್ಮ ನಿಯಮ).')
+  k('khata.bill.saved_month','Filed under {{month}} (bill date {{date}}). Wrong date? Change it in the bills list.','{{month}} में रखा गया (बिल की तारीख {{date}})। तारीख गलत है? बिलों की सूची में बदलें।','{{month}} ಅಡಿಯಲ್ಲಿ ಇಡಲಾಗಿದೆ (ಬಿಲ್ ದಿನಾಂಕ {{date}}). ದಿನಾಂಕ ತಪ್ಪೇ? ಬಿಲ್ ಪಟ್ಟಿಯಲ್ಲಿ ಬದಲಿಸಿ.')
   k('khata.sale.button','Add sale','बिक्री जोड़ें','ಮಾರಾಟ ಸೇರಿಸಿ')
   k('khata.sale.title','Add a sale','बिक्री जोड़ें','ಮಾರಾಟ ಸೇರಿಸಿ')
   k('khata.sale.note','Note (optional)','नोट (वैकल्पिक)','ಟಿಪ್ಪಣಿ (ಐಚ್ಛಿಕ)')

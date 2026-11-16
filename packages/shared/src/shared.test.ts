@@ -203,3 +203,19 @@ test('prices are read the way Indian boards and bills write them', () => {
   assert.equal(p('Price on request'), null);
   assert.equal(p(''), null);
 });
+
+// ---- Indian bill dates (day first) ----
+import { parseIndianDate } from './date-parse';
+
+test('bill dates are read day-first, the Indian way', () => {
+  assert.equal(parseIndianDate('06/11/2026'), '2026-11-06');
+  assert.equal(parseIndianDate('Bill Date: 6-11-26'), '2026-11-06');
+  assert.equal(parseIndianDate('06.11.2026'), '2026-11-06');
+  assert.equal(parseIndianDate('6 Nov 2026'), '2026-11-06');
+  assert.equal(parseIndianDate('6th November, 2026'), '2026-11-06');
+  assert.equal(parseIndianDate('Nov 6, 2026'), '2026-11-06');
+  assert.equal(parseIndianDate('2026-11-06'), '2026-11-06');
+  assert.equal(parseIndianDate('३१/१०/२०२६'), '2026-10-31');
+  assert.equal(parseIndianDate('31/02/2026'), null);
+  assert.equal(parseIndianDate('no date'), null);
+});

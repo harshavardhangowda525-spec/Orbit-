@@ -55,3 +55,4 @@
 .khata-mini b { font-size: 17px; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) { .books-bar-track i { animation: none; } }
+.bill-date { width: auto; min-width: 0; }

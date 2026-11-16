@@ -60,7 +60,12 @@ function Bars({ rows, currency }: { rows: { key: string; label: string; amount: 
  */
 export function Books() {
   const { t, ts, money, lang } = useI18n();
-  const [month, setMonth] = useState<string | null>(null);
+  // ?month=YYYY-MM opens that month (e.g. right after saving a bill dated in another month).
+  const [month, setMonth] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const m = new URLSearchParams(window.location.search).get('month');
+    return m && /^\d{4}-\d{2}$/.test(m) ? m : null;
+  });
   const [s, setS] = useState<Summary | null>(null);
   const [bills, setBills] = useState<Expense[]>([]);
   const [hidden, setHidden] = useState(false);
@@ -84,7 +89,8 @@ export function Books() {
 
   const cur = s?.currency ?? 'INR';
   const monthName = (m: string) => new Intl.DateTimeFormat(lang === 'en' ? 'en-IN' : `${lang}-IN`, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${m}-15T00:00:00Z`));
-  const close = () => { setPanel('none'); load(); };
+  // After saving a bill, show the month it was filed under (it may not be this month).
+  const close = (savedMonth?: string) => { setPanel('none'); if (savedMonth && savedMonth !== month) setMonth(savedMonth); else load(); };
 
   const actions = (
     <div className="books-actions">
@@ -99,7 +105,7 @@ export function Books() {
       {actions}
       {panel === 'scan' && <ScanBill onDone={close} currency={cur} />}
       {panel === 'type' && <ScanBill onDone={close} manual currency={cur} />}
-      {panel === 'sale' && <AddSale onDone={close} currency={cur} />}
+      {panel === 'sale' && <AddSale onDone={() => close()} currency={cur} />}
       {hidden && <p className="note small">{t('khata.staff_note')}</p>}
       {error && <p className="error small">{error}</p>}
 
@@ -180,7 +186,10 @@ export function Books() {
                       onChange={async (e) => { await api(`/khata/expenses/${b.id}`, { method: 'PATCH', body: { category: e.target.value } }); load(); }}>
                       {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{t(`khata.cat.${c}`)}</option>)}
                     </select>
-                    {' · '}{new Date(`${b.billDate}T12:00:00Z`).toLocaleDateString(lang === 'en' ? 'en-IN' : `${lang}-IN`, { day: 'numeric', month: 'short' })}{b.billNumber ? ` · ${b.billNumber}` : ''}
+                    {' · '}
+                    <input type="date" className="cat-select bill-date" value={b.billDate} aria-label={t('khata.bill.date')} data-testid="bill-date-edit"
+                      onChange={async (e) => { if (!e.target.value) return; await api(`/khata/expenses/${b.id}`, { method: 'PATCH', body: { billDate: e.target.value } }); setMonth(e.target.value.slice(0, 7)); load(); }} />
+                    {b.billNumber ? ` · ${b.billNumber}` : ''}
                   </div>
                 </div>
                 <b>{money(b.total, cur)}</b>

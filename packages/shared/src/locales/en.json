@@ -381,6 +381,7 @@
  "khata.bill.save_anyway": "Save anyway",
  "khata.bill.saved": "Saved the {{amount}} bill.",
  "khata.bill.saved_auto": "Saved the {{amount}} bill automatically (your rule for this vendor).",
+ "khata.bill.saved_month": "Filed under {{month}} (bill date {{date}}). Wrong date? Change it in the bills list.",
  "khata.bill.subtotal": "Subtotal",
  "khata.bill.vendor": "Who is it from?",
  "khata.bills": "Bills ({{count}})",

@@ -41,6 +41,7 @@ const BillOut = z.object({
   vendor_gstin: str(20).optional(),
   bill_number: str(60).optional(),
   bill_date: str(20).optional(),
+  bill_date_text: str(40).optional(),
   items: z.array(z.object({ name: str(160), qty: num.optional(), rate: num.optional(), amount: num.optional() })).default([]),
   subtotal: num.optional(),
   cgst: num.optional(), sgst: num.optional(), igst: num.optional(), cess: num.optional(),
@@ -74,7 +75,7 @@ A business card or shop signboard. Return {"readable": bool, "name": "business n
 An opening-hours board. Return {"readable": bool, "hours": {"mon": [["HH:MM","HH:MM"]], "tue": [...], ..., "sun": []} (24h times, [] = closed), "confidence": 0-1}`,
   bill: `KIND: bill
 A purchase bill, invoice or receipt the business PAID (rent, electricity, stock, salaries...). If it is not a bill, set "is_bill": false.
-Return {"is_bill": bool, "readable": bool, "vendor_name": "as written", "vendor_gstin": "15-character GSTIN or null", "bill_number": "or null", "bill_date": "YYYY-MM-DD or null",
+Return {"is_bill": bool, "readable": bool, "vendor_name": "as written", "vendor_gstin": "15-character GSTIN or null", "bill_number": "or null", "bill_date_text": "the date exactly as printed, e.g. 06/11/2026", "bill_date": "YYYY-MM-DD or null (Indian bills write the DAY first: 06/11/2026 is 6 November 2026, not June 11)",
 "items": [{"name": "as written", "qty": number|null, "rate": number|null, "amount": number|null}], "subtotal": number|null, "cgst": number|null, "sgst": number|null, "igst": number|null, "cess": number|null,
 "total": number|null, "payment_mode": "cash|upi|card|bank|null", "category_hint": "rent|salaries|supplies|utilities|electricity|internet|marketing|equipment|repairs|transport|food|professional_fees|other",
 "confidence": {"vendor_name": 0-1, "bill_number": 0-1, "bill_date": 0-1, "total": 0-1, "tax": 0-1}}`,

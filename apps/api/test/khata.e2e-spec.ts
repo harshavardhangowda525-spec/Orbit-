@@ -73,6 +73,22 @@ describe('Khata: the books', () => {
     expect(feed[0]).toMatchObject({ agent: 'khata', type: 'expense_added', sentence: { key: 'feed.khata.expense' }, traceId: e.trace_id });
   });
 
+  it('bill dates are read day-first (06/11 is 6 November), and an unlikely date is flagged to check', async () => {
+    const [y, m, d] = today().split('-');
+    // The model swapped day and month; the printed text is day-first.
+    bill({ vendor_name: 'KPTCL', bill_number: 'KP-18157', total: 139, subtotal: null, cgst: null, sgst: null, bill_date: `${y}-${d}-${m}`, bill_date_text: `${d}/${m}/${y}` });
+    const r = (await S.api.post('/khata/bills/read', { fileIds: await upload() }).expect(201)).body;
+    expect(r.draft.billDate).toBe(today());
+    expect(r.draft.check).not.toContain('billDate');
+    // Five months old: probably misread, so the owner is asked to check it.
+    const old = new Date(Date.now() - 150 * 86_400_000).toISOString().slice(0, 10);
+    const [oy, om, od] = old.split('-');
+    bill({ vendor_name: 'KPTCL', bill_number: 'KP-1', total: 139, subtotal: null, cgst: null, sgst: null, bill_date: old, bill_date_text: `${od}/${om}/${oy}` });
+    const r2 = (await S.api.post('/khata/bills/read', { fileIds: await upload() }).expect(201)).body;
+    expect(r2.draft.billDate).toBe(old);
+    expect(r2.draft.check).toContain('billDate');
+  });
+
   it('a duplicate bill is detected (same vendor and bill number, or same amount, date and vendor)', async () => {
     bill();
     const r = (await S.api.post('/khata/bills/read', { fileIds: await upload() }).expect(201)).body;

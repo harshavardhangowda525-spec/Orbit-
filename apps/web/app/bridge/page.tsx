@@ -180,7 +180,7 @@ function Bridge() {
       )}
       {scan && (
         <div className="khata-sheet" role="dialog" aria-modal="true" aria-label={t('khata.scan.title')} onClick={(e) => e.target === e.currentTarget && setScan(false)}>
-          <ScanBill onDone={() => { setScan(false); load(); }} currency={data?.business.currency} />
+          <ScanBill onDone={(m) => { setScan(false); load(); if (m) router.push(`/bridge?view=money&month=${m}`); }} currency={data?.business.currency} />
         </div>
       )}
     </main>

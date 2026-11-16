@@ -381,6 +381,7 @@
  "khata.bill.save_anyway": "फिर भी सेव करें",
  "khata.bill.saved": "{{amount}} का बिल सेव हुआ।",
  "khata.bill.saved_auto": "{{amount}} का बिल अपने-आप सेव हुआ (इस विक्रेता के लिए आपका नियम)।",
+ "khata.bill.saved_month": "{{month}} में रखा गया (बिल की तारीख {{date}})। तारीख गलत है? बिलों की सूची में बदलें।",
  "khata.bill.subtotal": "उप-योग",
  "khata.bill.vendor": "किसका बिल है?",
  "khata.bills": "बिल ({{count}})",

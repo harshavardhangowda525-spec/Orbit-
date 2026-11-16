@@ -13,3 +13,4 @@ export * from './ai-tiers';
 export * from './trust';
 export * from './price-parse';
 export * from './khata';
+export * from './date-parse';

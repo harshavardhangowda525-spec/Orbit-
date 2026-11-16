@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { guessCategory, khataAllows, localParts, parseIndianPrice, vendorKey, type KhataFeature, type KhataLevel, type Sentence } from '@orbit/shared';
+import { guessCategory, khataAllows, localParts, parseIndianDate, parseIndianPrice, vendorKey, type KhataFeature, type KhataLevel, type Sentence } from '@orbit/shared';
 import { DbService, type Tx } from '../db/db.service';
 import { JobsService } from '../jobs/jobs.service';
 import { SnapService } from '../snap/snap.service';
@@ -107,8 +107,16 @@ export class KhataService implements OnModuleInit {
       for (const [k, field] of [['vendor_name', 'vendorName'], ['bill_date', 'billDate'], ['total', 'total'], ['bill_number', 'billNumber'], ['tax', 'tax']] as const) {
         if ((conf[k] ?? 0.5) < CHECK_BELOW) check.add(field);
       }
-      const billDate = /^\d{4}-\d{2}-\d{2}$/.test(x.bill_date ?? '') ? x.bill_date : null;
+      // Indian bills print the day first (06/11/2026 = 6 Nov). Read the printed text ourselves; it wins over the model's guess.
+      const printed = parseIndianDate(x.bill_date_text);
+      const iso = /^\d{4}-\d{2}-\d{2}$/.test(x.bill_date ?? '') ? x.bill_date : null;
+      const billDate = printed ?? iso;
       if (!billDate) check.add('billDate');
+      else {
+        // A bill dated in the future, or more than 60 days ago, is probably misread: ask the owner to check.
+        const days = (Date.parse(`${billDate}T12:00:00Z`) - Date.parse(`${this.today(p.tz)}T12:00:00Z`)) / 86_400_000;
+        if (days > 1 || days < -60) check.add('billDate');
+      }
       if (!vendorName) check.add('vendorName');
       const gstin = x.vendor_gstin ? String(x.vendor_gstin).toUpperCase().replace(/\s/g, '') : null;
       if (gstin && !GSTIN.test(gstin)) check.add('gstin');

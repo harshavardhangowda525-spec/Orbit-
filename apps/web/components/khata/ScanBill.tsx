@@ -15,7 +15,7 @@ interface Draft {
   paymentMode: string | null; items: any[]; check: string[]; vendor: { id: string; name: string; autoSave: boolean; confirmedBills: number } | null;
 }
 interface ReadResult { snapId: string; problem: string | null; draft?: Draft; duplicate?: { vendorName: string; billNumber: string | null; billDate: string; total: number } | null; saved?: { id: string; versionId: string } }
-type Stage = { s: 'pick' } | { s: 'reading'; preview: string | null } | { s: 'review'; r: ReadResult; d: Draft; auto: boolean } | { s: 'problem'; problem: string } | { s: 'saved'; versionId: string | null; auto: boolean; amount: number };
+type Stage = { s: 'pick' } | { s: 'reading'; preview: string | null } | { s: 'review'; r: ReadResult; d: Draft; auto: boolean } | { s: 'problem'; problem: string } | { s: 'saved'; versionId: string | null; auto: boolean; amount: number; billDate: string };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const blank = (): Draft => ({ vendorName: '', gstin: null, billNumber: null, billDate: today(), category: 'other', categorySource: 'guess', subtotal: null, tax: { cgst: null, sgst: null, igst: null, cess: null }, total: 0, paymentMode: null, items: [], check: [], vendor: null });
@@ -25,7 +25,7 @@ const blank = (): Draft => ({ vendorName: '', gstin: null, billNumber: null, bil
  * shows one review card. Nothing is saved until Save (unless the owner set
  * auto-save for that vendor). Saved bills can be undone for 24 hours.
  */
-export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone: () => void; manual?: boolean; currency?: string }) {
+export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone: (savedMonth?: string) => void; manual?: boolean; currency?: string }) {
   const { t, money } = useI18n();
   const [stage, setStage] = useState<Stage>(manual ? { s: 'review', r: { snapId: '', problem: null }, d: blank(), auto: false } : { s: 'pick' });
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone:
     try {
       const { ids } = await apiUpload<{ ids: string[] }>('/files?purpose=bill', await preparePhotos(files));
       const r = await api<ReadResult>('/khata/bills/read', { body: { fileIds: ids } });
-      if (r.saved) return setStage({ s: 'saved', versionId: r.saved.versionId, auto: true, amount: r.draft!.total });
+      if (r.saved) return setStage({ s: 'saved', versionId: r.saved.versionId, auto: true, amount: r.draft!.total, billDate: r.draft!.billDate });
       if (r.problem || !r.draft) return setStage({ s: 'problem', problem: r.problem ?? 'unreadable' });
       setDup(r.duplicate ?? null);
       setStage({ s: 'review', r, d: r.draft, auto: !!r.draft.vendor?.autoSave });
@@ -61,7 +61,7 @@ export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone:
           subtotal: d.subtotal, tax: d.tax, total: d.total, paymentMode: d.paymentMode, items: d.items, autoSaveVendor: stage.auto, allowDuplicate,
         },
       });
-      setStage({ s: 'saved', versionId: res.versionId, auto: false, amount: d.total });
+      setStage({ s: 'saved', versionId: res.versionId, auto: false, amount: d.total, billDate: d.billDate });
     } catch (e) {
       const err = e as ApiError;
       if (err.code === 'duplicate_bill') setDup(err.details?.duplicate ?? { vendorName: d.vendorName, billNumber: d.billNumber, billDate: d.billDate, total: d.total });
@@ -140,14 +140,14 @@ export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone:
               <span className="small">{dup.vendorName}{dup.billNumber ? ` · ${dup.billNumber}` : ''} · {dup.billDate} · {money(dup.total, currency)}</span>
               <div className="snap-actions">
                 <button type="button" className="btn" disabled={busy} onClick={() => save(true)}>{t('khata.bill.save_anyway')}</button>
-                <button type="button" className="btn" onClick={onDone}>{t('khata.bill.dont_save')}</button>
+                <button type="button" className="btn" onClick={() => onDone()}>{t('khata.bill.dont_save')}</button>
               </div>
             </div>
           )}
           {!dup && (
             <div className="snap-actions">
               <button className="btn primary" disabled={busy || !stage.d.vendorName || !(stage.d.total > 0)} data-testid="bill-save">{t('khata.bill.save')}</button>
-              <button type="button" className="btn" onClick={onDone}>{t('common.cancel')}</button>
+              <button type="button" className="btn" onClick={() => onDone()}>{t('common.cancel')}</button>
             </div>
           )}
         </form>
@@ -155,8 +155,12 @@ export function ScanBill({ onDone, manual = false, currency = 'INR' }: { onDone:
       {stage.s === 'saved' && (
         <div className="snap-done pop" role="status" data-testid="bill-saved">
           <b>{stage.auto ? t('khata.bill.saved_auto', { amount: money(stage.amount, currency) }) : t('khata.bill.saved', { amount: money(stage.amount, currency) })}</b>
+          {/* Say which month it is filed under when that is not this month (it then shows under that month in Books). */}
+          {stage.billDate.slice(0, 7) !== today().slice(0, 7) && (
+            <span className="snap-check" data-testid="bill-saved-month">{t('khata.bill.saved_month', { month: `~mo:${stage.billDate.slice(0, 7)}`, date: `~d:${stage.billDate}T12:00:00Z` })}</span>
+          )}
           <div className="snap-actions">
-            <button className="btn primary" onClick={onDone}>{t('common.continue')}</button>
+            <button className="btn primary" onClick={() => onDone(stage.billDate.slice(0, 7))}>{t('common.continue')}</button>
             <button className="btn" onClick={() => undo(stage.versionId)}>{t('held.undo')}</button>
           </div>
         </div>
