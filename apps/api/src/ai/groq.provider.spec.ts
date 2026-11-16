@@ -90,3 +90,37 @@ describe('Groq provider', () => {
     resetGroqFallback();
   });
 });
+
+import { groqSee, groqVisionCandidates, GROQ_VISION_FALLBACK } from './groq.provider';
+
+describe('Groq vision', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+    delete process.env.GROQ_VISION_MODEL;
+  });
+
+  it('tries the configured model first, then vision-looking models on the account, then Groq’s documented one', () => {
+    expect(groqVisionCandidates(['openai/gpt-oss-120b', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct', 'whisper-large-v3'], 'my/vision')).toEqual([
+      'my/vision', 'meta-llama/llama-4-scout-17b-16e-instruct', GROQ_VISION_FALLBACK,
+    ]);
+    // An empty or failed model list still has a model to try.
+    expect(groqVisionCandidates([], '')).toEqual([GROQ_VISION_FALLBACK]);
+  });
+
+  it('skips a model that refuses images and uses the next one', async () => {
+    process.env.GROQ_API_KEY = 'gsk_test';
+    const tried: string[] = [];
+    global.fetch = jest.fn(async (url: any, init: any) => {
+      if (String(url).endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: 'meta-llama/llama-4-scout-17b-16e-instruct' }, { id: 'openai/gpt-oss-120b' }] }), { status: 200 });
+      const model = JSON.parse(init.body).model;
+      tried.push(model);
+      if (model.includes('llama-4')) return new Response(JSON.stringify({ error: { message: 'The model `meta-llama/llama-4-scout-17b-16e-instruct` has been decommissioned' } }), { status: 400 });
+      return new Response(JSON.stringify({ model, choices: [{ message: { content: '{"is_bill":true,"total":100}' } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }), { status: 200 });
+    }) as any;
+    const r = await groqSee({ system: 's', prompt: 'KIND: bill', images: [{ mime: 'image/jpeg', data: 'AAAA' }] });
+    // The listed Llama 4 model was retired: skipped, then Groq's documented vision model works.
+    expect(tried).toEqual(['meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3.8-27b']);
+    expect(r).toMatchObject({ model: 'qwen/qwen3.8-27b', text: '{"is_bill":true,"total":100}' });
+  });
+});
