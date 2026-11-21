@@ -16,6 +16,8 @@ const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 export interface BillInput {
   snapId?: string | null;
+  /** The month of the books this bill goes into (YYYY-MM); defaults to this month. */
+  booksMonth?: string | null;
   vendorName: string;
   gstin?: string | null;
   billNumber?: string | null;
@@ -88,7 +90,7 @@ export class KhataService implements OnModuleInit {
   }
 
   /** Read a bill photo into a draft for the review card. Saves only for vendors the owner set to auto-save. */
-  async readBill(businessId: string, userId: string, fileIds: string[]) {
+  async readBill(businessId: string, userId: string, fileIds: string[], booksMonth?: string | null) {
     await this.db.withTenant(businessId, async (tx) => {
       const p = await this.plan(tx);
       if (p.billsPerMonth != null && (await this.billsUsed(tx, p.tz)) >= p.billsPerMonth) {
@@ -134,7 +136,7 @@ export class KhataService implements OnModuleInit {
       const duplicate = await this.findDuplicate(tx, draft);
       // "Auto-save bills from vendors I've confirmed before": only when nothing needs checking.
       if (vendor?.auto_save && vendor.confirmed_bills > 0 && !check.size && !duplicate) {
-        const saved = await this.saveBill(tx, { ...draft, snapId: snap.id }, userId, { auto: true, fileIds });
+        const saved = await this.saveBill(tx, { ...draft, snapId: snap.id, booksMonth }, userId, { auto: true, fileIds });
         return { snapId: snap.id, fileIds, problem: null, draft, duplicate: null, saved };
       }
       return { snapId: snap.id, fileIds, problem: null, draft, duplicate };
@@ -183,11 +185,12 @@ export class KhataService implements OnModuleInit {
       [name, key, b.gstin || null, b.category, !!b.autoSaveVendor, b.autoSaveVendor !== undefined],
     );
     const tax = Object.fromEntries(Object.entries(b.tax ?? {}).filter(([, v]) => v != null && Number(v) > 0));
+    const booksMonth = b.booksMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(b.booksMonth) ? b.booksMonth : monthOf(new Date(), p.tz);
     const e = await tx.one(
-      `INSERT INTO expenses (vendor_id, vendor_name, bill_number, bill_date, category, subtotal, tax, total, payment_mode, status, source, file_ids, snap_id, items, notes, created_by, confirmed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed',$10,$11,$12,$13,$14,$15, now()) RETURNING id, bill_date, total::float AS total`,
+      `INSERT INTO expenses (vendor_id, vendor_name, bill_number, bill_date, category, subtotal, tax, total, payment_mode, status, source, file_ids, snap_id, items, notes, created_by, confirmed_at, books_month)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed',$10,$11,$12,$13,$14,$15, now(), $16) RETURNING id, bill_date, books_month, total::float AS total`,
       [vendor.id, name, b.billNumber || null, b.billDate, b.category, b.subtotal ?? null, JSON.stringify(tax), b.total, b.paymentMode || null,
-        o.source ?? (b.snapId ? 'scan' : 'manual'), fileIds, b.snapId ?? null, JSON.stringify(b.items ?? []), b.notes || null, userId],
+        o.source ?? (b.snapId ? 'scan' : 'manual'), fileIds, b.snapId ?? null, JSON.stringify(b.items ?? []), b.notes || null, userId, booksMonth],
     );
     const amount = `~m:${p.currency}:${b.total}`;
     const learned = !!before?.default_category && before.default_category === b.category;
@@ -207,26 +210,27 @@ export class KhataService implements OnModuleInit {
     const versionId = await recordVersion(tx, { entity: 'expense', id: e.id, label: { key: 'change.expense_added', params: { amount, vendor: name } }, before: null, after: await versionSnapshot(tx, 'expense', e.id), by: userId });
     await this.detectRecurring(tx, vendor.id);
     liveToBusiness(tx, { type: 'stats.changed' });
-    return { id: e.id as string, total: e.total as number, vendorId: vendor.id as string, autoSave: vendor.auto_save as boolean, versionId };
+    return { id: e.id as string, total: e.total as number, booksMonth: e.books_month as string, vendorId: vendor.id as string, autoSave: vendor.auto_save as boolean, versionId };
   }
 
   async listExpenses(tx: Tx, month: string) {
     return tx.q(
-      `SELECT e.id, e.vendor_name AS vendor, e.bill_number AS "billNumber", to_char(e.bill_date, 'YYYY-MM-DD') AS "billDate", e.category, e.subtotal::float AS subtotal, e.tax,
+      `SELECT e.id, e.vendor_name AS vendor, e.bill_number AS "billNumber", to_char(e.bill_date, 'YYYY-MM-DD') AS "billDate", e.books_month AS "booksMonth", e.category, e.subtotal::float AS subtotal, e.tax,
               e.total::float AS total, e.payment_mode AS "paymentMode", e.source, e.file_ids AS "fileIds", e.trace_id AS "traceId", v.gstin
        FROM expenses e LEFT JOIN vendors v ON v.id = e.vendor_id
-       WHERE e.status = 'confirmed' AND to_char(e.bill_date, 'YYYY-MM') = $1 ORDER BY e.bill_date DESC, e.created_at DESC`,
+       WHERE e.status = 'confirmed' AND e.books_month = $1 ORDER BY e.created_at DESC`,
       [month],
     );
   }
 
-  async updateExpense(tx: Tx, id: string, patch: { category?: string; total?: number; billDate?: string; vendorName?: string }, userId: string) {
+  async updateExpense(tx: Tx, id: string, patch: { category?: string; total?: number; billDate?: string; vendorName?: string; booksMonth?: string }, userId: string) {
     const before = await versionSnapshot(tx, 'expense', id);
     if (!before || before.status !== 'confirmed') throw notFound();
     const r = await tx.one(
-      `UPDATE expenses SET category = COALESCE($2, category), total = COALESCE($3, total), bill_date = COALESCE($4::date, bill_date), vendor_name = COALESCE($5, vendor_name)
+      `UPDATE expenses SET category = COALESCE($2, category), total = COALESCE($3, total), bill_date = COALESCE($4::date, bill_date), vendor_name = COALESCE($5, vendor_name),
+         books_month = COALESCE($6, books_month)
        WHERE id = $1 RETURNING vendor_id, category, vendor_name`,
-      [id, patch.category ?? null, patch.total ?? null, patch.billDate ?? null, patch.vendorName ?? null],
+      [id, patch.category ?? null, patch.total ?? null, patch.billDate ?? null, patch.vendorName ?? null, patch.booksMonth ?? null],
     );
     // A corrected category teaches Khata for this vendor's next bills.
     if (patch.category && r.vendor_id) await tx.q(`UPDATE vendors SET default_category = $2 WHERE id = $1`, [r.vendor_id, patch.category]);
@@ -295,8 +299,8 @@ export class KhataService implements OnModuleInit {
     const today = this.today(p.tz);
     const todays = await tx.one(
       `SELECT (SELECT COALESCE(sum(amount), 0) FROM revenue_entries WHERE deleted_at IS NULL AND entry_date = $1)::float AS sales,
-              (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND bill_date = $1)::float AS spent`,
-      [today],
+              (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND (created_at AT TIME ZONE $2)::date = $1)::float AS spent`,
+      [today, p.tz],
     );
     if (m < monthOf(new Date(), p.tz)) await snapshot(tx, now);
     return {

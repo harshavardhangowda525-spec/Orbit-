@@ -12,9 +12,11 @@ import { books, monthOf } from './books';
 import { KhataService } from './khata.service';
 
 const Files = z.object({ fileIds: z.array(z.string().uuid()).min(1).max(5) });
+const ReadBill = Files.extend({ booksMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional() });
 const money = z.number().nonnegative().max(100_000_000);
 const Bill = z.object({
   snapId: z.string().uuid().nullable().optional(),
+  booksMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(),
   vendorName: z.string().trim().min(1).max(120),
   gstin: z.string().trim().max(20).nullable().optional(),
   billNumber: z.string().trim().max(60).nullable().optional(),
@@ -37,7 +39,7 @@ const Sale = z.object({
   via: z.enum(['app', 'settlement']).default('app'),
   fileId: z.string().uuid().nullable().optional(),
 });
-const ExpensePatch = z.object({ category: z.string().trim().min(1).max(40).optional(), total: money.optional(), billDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), vendorName: z.string().trim().min(1).max(120).optional() });
+const ExpensePatch = z.object({ booksMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), category: z.string().trim().min(1).max(40).optional(), total: money.optional(), billDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), vendorName: z.string().trim().min(1).max(120).optional() });
 const Settings = z.object({ checkin: z.boolean().optional(), checkinTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional() });
 const Month = z.string().regex(/^\d{4}-\d{2}$/).optional();
 
@@ -51,8 +53,8 @@ export class KhataController {
   constructor(private readonly db: DbService, private readonly khata: KhataService) {}
 
   @Post('bills/read')
-  readBill(@CurrentTenant() t: Tenant, @Body(new ZodPipe(Files)) b: z.infer<typeof Files>) {
-    return this.khata.readBill(t.businessId, t.userId, b.fileIds);
+  readBill(@CurrentTenant() t: Tenant, @Body(new ZodPipe(ReadBill)) b: z.infer<typeof ReadBill>) {
+    return this.khata.readBill(t.businessId, t.userId, b.fileIds, b.booksMonth);
   }
 
   @Post('bills')

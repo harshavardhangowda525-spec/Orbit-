@@ -36,6 +36,8 @@ test('Scan a bill from The Bridge: one review card, Save, Undo; then it is in th
   await expect(page.getByTestId('scan-bill')).toContainText('Same category as your last bill from BESCOM');
   await page.getByTestId('bill-save').click();
   await expect(page.getByTestId('bill-saved')).toContainText('Saved the ₹3,450 bill.');
+  // Kept with this month's bills (whatever date is printed on it).
+  await expect(page.getByTestId('bill-saved-month')).toContainText(/Added to .+’s bills\./);
   // Undo: gone again.
   await page.getByTestId('bill-saved').getByRole('button', { name: 'Undo' }).click();
   await page.goto('/bridge?view=money');

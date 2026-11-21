@@ -252,8 +252,8 @@ async function createSample(tx: Tx, s: SampleBusiness): Promise<string> {
       for (const [vendor, cat, day, total, tax] of bills) {
         const date = monthDate(back, day);
         if (back === 0 && date > new Date().toISOString().slice(0, 10)) continue;
-        await tx.q(`INSERT INTO expenses (vendor_id, vendor_name, bill_number, bill_date, category, total, tax, status, source, confirmed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'scan', now())`, [
-          vendors[vendor], vendor, `${vendor.slice(0, 3).toUpperCase()}-${back}${day}`, date, cat, total, JSON.stringify(tax),
+        await tx.q(`INSERT INTO expenses (vendor_id, vendor_name, bill_number, bill_date, category, total, tax, status, source, confirmed_at, books_month) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'scan', now(), $8)`, [
+          vendors[vendor], vendor, `${vendor.slice(0, 3).toUpperCase()}-${back}${day}`, date, cat, total, JSON.stringify(tax), date.slice(0, 7),
         ]);
       }
       for (const day of [2, 9, 16, 23]) {

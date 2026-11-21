@@ -8,7 +8,8 @@ import type { Tx } from '../db/db.service';
  *  - counter: other payments recorded in Orbit (bookings and invoices marked paid at the counter)
  *  - cash:    sales the owner or staff logged with Khata (cash, own UPI QR, card machine)
  * A booking paid by a payment link is one payment row, so it counts once.
- * Expenses are confirmed bills only. Profit = revenue - expenses, exactly.
+ * Expenses are the confirmed bills kept in that month of the books (the month the owner
+ * added them to, not the date printed on the bill). Profit = revenue - expenses, exactly.
  */
 export interface Books {
   month: string;
@@ -49,14 +50,14 @@ export async function books(tx: Tx, month: string, tz: string): Promise<Books> {
   );
   const cats = await tx.q(
     `SELECT category, sum(total)::float AS amount, count(*)::int AS count FROM expenses
-     WHERE status = 'confirmed' AND bill_date >= $1 AND bill_date < $2 GROUP BY category ORDER BY sum(total) DESC`,
-    [firstDay, nextFirstDay],
+     WHERE status = 'confirmed' AND books_month = $1 GROUP BY category ORDER BY sum(total) DESC`,
+    [month],
   );
   const gst = await tx.one(
     `SELECT COALESCE(sum(COALESCE((tax->>'cgst')::numeric, 0) + COALESCE((tax->>'sgst')::numeric, 0) + COALESCE((tax->>'igst')::numeric, 0) + COALESCE((tax->>'cess')::numeric, 0)), 0)::float AS paid,
             count(*) FILTER (WHERE tax <> '{}'::jsonb)::int AS bills
-     FROM expenses WHERE status = 'confirmed' AND bill_date >= $1 AND bill_date < $2`,
-    [firstDay, nextFirstDay],
+     FROM expenses WHERE status = 'confirmed' AND books_month = $1`,
+    [month],
   );
   const collected = await tx.one(
     `SELECT COALESCE(sum(i.tax_total), 0)::float AS collected FROM invoices i

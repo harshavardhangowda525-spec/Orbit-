@@ -12,7 +12,7 @@ const ENTITIES = {
   agent: { table: 'agents', key: 'agent_key', cols: ['enabled', 'display_name', 'personality', 'auto_approval_rules'] },
   knowledge_item: { table: 'knowledge_items', key: 'id', cols: ['type', 'title', 'content', 'active', 'deleted_at'] },
   profile: { table: 'business_profiles', key: 'business_id', cols: ['review_url', 'hold_seconds', 'review_before_send'] },
-  expense: { table: 'expenses', key: 'id', cols: ['category', 'total', 'bill_date', 'vendor_name', 'status', 'deleted_at'] },
+  expense: { table: 'expenses', key: 'id', cols: ['category', 'total', 'bill_date', 'books_month', 'vendor_name', 'status', 'deleted_at'] },
   revenue_entry: { table: 'revenue_entries', key: 'id', cols: ['amount', 'mode', 'entry_date', 'note', 'deleted_at'] },
 } as const;
 export type VersionedEntity = keyof typeof ENTITIES;

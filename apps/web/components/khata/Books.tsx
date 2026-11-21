@@ -18,7 +18,7 @@ interface Summary {
   gst: { paidOnBills: number; collected: number; bills: number; label: Sentence } | null;
   today: { sales: number; spent: number }; bills: { used: number; limit: number | null }; locked: string[];
 }
-interface Expense { id: string; vendor: string; billNumber: string | null; billDate: string; category: string; total: number; fileIds: string[]; traceId: string | null }
+interface Expense { id: string; vendor: string; billNumber: string | null; billDate: string; booksMonth: string; category: string; total: number; fileIds: string[]; traceId: string | null }
 
 const shift = (m: string, by: number) => {
   const [y, mo] = m.split('-').map(Number);
@@ -72,6 +72,7 @@ export function Books() {
   const [panel, setPanel] = useState<'none' | 'scan' | 'type' | 'sale'>('none');
   const [error, setError] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -103,8 +104,8 @@ export function Books() {
   return (
     <section className="stack books" data-testid="books">
       {actions}
-      {panel === 'scan' && <ScanBill onDone={close} currency={cur} />}
-      {panel === 'type' && <ScanBill onDone={close} manual currency={cur} />}
+      {panel === 'scan' && <ScanBill onDone={close} currency={cur} month={s?.month} />}
+      {panel === 'type' && <ScanBill onDone={close} manual currency={cur} month={s?.month} />}
       {panel === 'sale' && <AddSale onDone={() => close()} currency={cur} />}
       {hidden && <p className="note small">{t('khata.staff_note')}</p>}
       {error && <p className="error small">{error}</p>}
@@ -187,12 +188,19 @@ export function Books() {
                       {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{t(`khata.cat.${c}`)}</option>)}
                     </select>
                     {' · '}
-                    <input type="date" className="cat-select bill-date" value={b.billDate} aria-label={t('khata.bill.date')} data-testid="bill-date-edit"
-                      onChange={async (e) => { if (!e.target.value) return; await api(`/khata/expenses/${b.id}`, { method: 'PATCH', body: { billDate: e.target.value } }); setMonth(e.target.value.slice(0, 7)); load(); }} />
+                    {t('khata.bill.printed', { date: `~d:${b.billDate}T12:00:00Z` })}
                     {b.billNumber ? ` · ${b.billNumber}` : ''}
                   </div>
                 </div>
                 <b>{money(b.total, cur)}</b>
+                {/* Every bill belongs to a month of the books; move it if it belongs to another month. */}
+                {moving === b.id ? (
+                  <input type="month" className="input bill-move" value={b.booksMonth} autoFocus aria-label={t('khata.bill.month')} data-testid="bill-month-edit"
+                    onBlur={() => setMoving(null)}
+                    onChange={async (e) => { if (!e.target.value) return; await api(`/khata/expenses/${b.id}`, { method: 'PATCH', body: { booksMonth: e.target.value } }); setMoving(null); load(); }} />
+                ) : (
+                  <button className="link-btn small" onClick={() => setMoving(b.id)} data-testid="bill-move">{t('khata.bill.move')}</button>
+                )}
                 {b.fileIds.length > 0 && <button className="link-btn small" onClick={async () => setPhoto(await apiBlobUrl(`/files/${b.fileIds[0]}`))}>{t('khata.view_bill')}</button>}
                 <button className="why-link" onClick={() => openWhy(b.traceId)}>{t('why.link')}</button>
               </div>

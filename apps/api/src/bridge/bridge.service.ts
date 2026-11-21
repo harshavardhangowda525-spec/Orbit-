@@ -49,8 +49,8 @@ export class BridgeService {
              + (SELECT COALESCE(sum(amount), 0) FROM revenue_entries WHERE deleted_at IS NULL AND entry_date = ($1::timestamptz AT TIME ZONE $2)::date) AS money_today,
            (SELECT COALESCE(sum(amount), 0) FROM payments, b WHERE status = 'paid' AND paid_at >= b.start - interval '1 day' AND paid_at < b.start)
              + (SELECT COALESCE(sum(amount), 0) FROM revenue_entries WHERE deleted_at IS NULL AND entry_date = ($1::timestamptz AT TIME ZONE $2)::date - 1) AS money_yesterday,
-           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND bill_date = ($1::timestamptz AT TIME ZONE $2)::date) AS spent_today,
-           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND bill_date = ($1::timestamptz AT TIME ZONE $2)::date - 1) AS spent_yesterday,
+           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND (created_at AT TIME ZONE $2)::date = ($1::timestamptz AT TIME ZONE $2)::date) AS spent_today,
+           (SELECT COALESCE(sum(total), 0) FROM expenses WHERE status = 'confirmed' AND (created_at AT TIME ZONE $2)::date = ($1::timestamptz AT TIME ZONE $2)::date - 1) AS spent_yesterday,
            (SELECT COALESCE(sum(amount), 0) / 4.0 FROM payments, b, generate_series(1, 4) k
               WHERE status = 'paid' AND paid_at >= b.start - make_interval(days => 7 * k) AND paid_at < b.start - make_interval(days => 7 * k) + interval '1 day') AS usual_money,
            (SELECT count(*) FROM conversations WHERE status = 'waiting_staff') AS people_waiting,

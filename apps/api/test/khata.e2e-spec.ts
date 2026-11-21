@@ -89,6 +89,25 @@ describe('Khata: the books', () => {
     expect(r2.draft.check).toContain('billDate');
   });
 
+  it('bills are kept by month: a bill added this month is in this month’s books, whatever date is printed on it; it can be moved to another month', async () => {
+    const before = (await S.api.get('/khata/summary').expect(200)).body.expenses.total;
+    // Printed in June, added now: it belongs to this month's bills.
+    const saved = (await S.api.post('/khata/bills', { vendorName: 'Karnataka Power', billNumber: 'KP-JUNE', billDate: '2026-06-11', category: 'electricity', total: 139 }).expect(201)).body;
+    expect(saved.booksMonth).toBe(thisMonth());
+    expect((await S.api.get('/khata/summary').expect(200)).body.expenses.total).toBe(before + 139);
+    const row = (await S.api.get('/khata/expenses').expect(200)).body.find((b: any) => b.id === saved.id);
+    expect(row).toMatchObject({ billDate: '2026-06-11', booksMonth: thisMonth() });
+    // The owner can choose the month when adding, or move it later.
+    const prev = (await S.api.post('/khata/bills', { vendorName: 'Karnataka Power', billNumber: 'KP-OCT', billDate: '2026-10-02', category: 'electricity', total: 120, booksMonth: '2026-10' }).expect(201)).body;
+    expect((await S.api.get('/khata/expenses?month=2026-10').expect(200)).body.map((b: any) => b.id)).toContain(prev.id);
+    await S.api.patch(`/khata/expenses/${prev.id}`, { booksMonth: thisMonth() }).expect(200);
+    expect((await S.api.get('/khata/expenses').expect(200)).body.map((b: any) => b.id)).toContain(prev.id);
+    expect((await S.api.get('/khata/expenses?month=2026-10').expect(200)).body.map((b: any) => b.id)).not.toContain(prev.id);
+    // Tidy up so the totals below are not affected.
+    await S.api.delete(`/khata/expenses/${saved.id}`).expect(200);
+    await S.api.delete(`/khata/expenses/${prev.id}`).expect(200);
+  });
+
   it('a duplicate bill is detected (same vendor and bill number, or same amount, date and vendor)', async () => {
     bill();
     const r = (await S.api.post('/khata/bills/read', { fileIds: await upload() }).expect(201)).body;
@@ -161,7 +180,7 @@ describe('Khata: the books', () => {
     expect(s.revenue.online).toBe(1000);
     expect(s.revenue.counter).toBe(450.5);
     expect(s.revenue.total).toBe(s.revenue.online + s.revenue.counter + s.revenue.cash);
-    const confirmed = await tenant((tx) => tx.one(`SELECT COALESCE(sum(total), 0)::float AS t FROM expenses WHERE status = 'confirmed' AND to_char(bill_date, 'YYYY-MM') = $1`, [thisMonth()]));
+    const confirmed = await tenant((tx) => tx.one(`SELECT COALESCE(sum(total), 0)::float AS t FROM expenses WHERE status = 'confirmed' AND books_month = $1`, [thisMonth()]));
     expect(s.expenses.total).toBe(confirmed.t);
     expect(s.profit).toBe(Math.round((s.revenue.total - confirmed.t) * 100) / 100);
     expect(s.note).toEqual({ key: 'khata.note.based_on' });
