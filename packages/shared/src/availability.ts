@@ -66,6 +66,8 @@ export interface SlotQuery {
   timeZone: string;
   businessHours: WeeklyHours;
   holidays?: string[]; // local dates when the business is closed
+  /** Weekly hours that start on a later date ("closed Tuesdays from 18 Nov"); the latest one on or before a date wins. */
+  hoursChanges?: { from: string; hours: WeeklyHours }[];
   staff: StaffAvailability[];
   durationMin: number;
   bufferBeforeMin?: number;
@@ -112,6 +114,12 @@ function intersect(a: Interval[], b: Interval[]): Interval[] {
  * busy times. When several staff are free at the same start, the first listed wins
  * (callers order staff by preference or load).
  */
+/** The business's weekly hours that apply on a local date (taking later-dated changes into account). */
+export function hoursOn(q: Pick<SlotQuery, 'businessHours' | 'hoursChanges'>, date: string): WeeklyHours {
+  const change = [...(q.hoursChanges ?? [])].filter((c) => c.from <= date).sort((a, b) => (a.from < b.from ? 1 : -1))[0];
+  return change ? change.hours : q.businessHours;
+}
+
 export function findSlots(q: SlotQuery): Slot[] {
   const step = q.stepMin ?? 15;
   const lead = q.minLeadMin ?? 30;
@@ -126,7 +134,7 @@ export function findSlots(q: SlotQuery): Slot[] {
   for (let i = 0; i < q.days && out.length < limit; i++) {
     const date = addDays(q.fromDate, i);
     if (holidays.has(date)) continue;
-    const business = openRanges(q.businessHours, date, q.timeZone);
+    const business = openRanges(hoursOn(q, date), date, q.timeZone);
     const candidates: Slot[] = [];
     for (const s of q.staff) {
       if (s.leave?.some((l) => l.from <= date && date <= l.to)) continue;

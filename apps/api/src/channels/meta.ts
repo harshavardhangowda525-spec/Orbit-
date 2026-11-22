@@ -177,6 +177,23 @@ export async function senderName(channel: MetaChannel, userId: string, token: st
   }
 }
 
+/** Download a voice note (WhatsApp: look up the media URL first; it needs the same token). Max 16 MB. */
+export async function downloadMedia(audio: { mediaId?: string; url?: string; mime?: string | null }, token: string): Promise<{ data: Buffer; mime: string }> {
+  let url = audio.url ?? '';
+  let mime = audio.mime ?? '';
+  if (audio.mediaId) {
+    const d = await graph(`/${encodeURIComponent(audio.mediaId)}`, token);
+    url = d.url;
+    mime = mime || d.mime_type || '';
+  }
+  if (!url) throw new MetaError(404, 'No media URL');
+  const res = await fetch(url, { headers: audio.mediaId ? { authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new MetaError(res.status, `Media download failed (${res.status})`);
+  const data = Buffer.from(await res.arrayBuffer());
+  if (data.length > 16 * 1024 * 1024) throw new MetaError(413, 'Voice note too large');
+  return { data, mime: (mime || res.headers.get('content-type') || 'audio/ogg').split(';')[0].trim() };
+}
+
 // ---------- receiving ----------
 
 export interface Inbound {
@@ -189,6 +206,8 @@ export interface Inbound {
   messageId: string;
   text: string;
   at: Date;
+  /** A voice note: WhatsApp gives a media id, Messenger/Instagram a URL. */
+  audio?: { mediaId?: string; url?: string; mime?: string | null };
 }
 
 export interface StatusUpdate {
@@ -227,7 +246,8 @@ export function parseWebhook(body: any): { messages: Inbound[]; statuses: Status
         for (const m of v.messages ?? []) {
           const text = whatsappText(m).trim();
           if (!m.id || !m.from || !text) continue;
-          messages.push({ channel: 'whatsapp', accountId, from: String(m.from), name: names.get(String(m.from)) ?? null, messageId: String(m.id), text, at: new Date(Number(m.timestamp) * 1000 || Date.now()) });
+          const audio = m.type === 'audio' && m.audio?.id ? { mediaId: String(m.audio.id), mime: m.audio.mime_type ?? null } : undefined;
+          messages.push({ channel: 'whatsapp', accountId, from: String(m.from), name: names.get(String(m.from)) ?? null, messageId: String(m.id), text, at: new Date(Number(m.timestamp) * 1000 || Date.now()), ...(audio ? { audio } : {}) });
         }
         for (const s of v.statuses ?? []) {
           if (!['sent', 'delivered', 'read', 'failed'].includes(s.status)) continue;
@@ -244,7 +264,9 @@ export function parseWebhook(body: any): { messages: Inbound[]; statuses: Status
         if (!m || m.is_echo || !ev.sender?.id || !m.mid) continue;
         const text = (m.text ?? (m.attachments?.length ? MEDIA_LABEL[m.attachments[0].type] ?? '[Attachment]' : '')).trim();
         if (!text) continue;
-        messages.push({ channel, accountId, from: String(ev.sender.id), name: null, messageId: String(m.mid), text, at: new Date(Number(ev.timestamp) || Date.now()) });
+        const a = m.attachments?.[0];
+        const audio = a?.type === 'audio' && a.payload?.url ? { url: String(a.payload.url), mime: null } : undefined;
+        messages.push({ channel, accountId, from: String(ev.sender.id), name: null, messageId: String(m.mid), text, at: new Date(Number(ev.timestamp) || Date.now()), ...(audio ? { audio } : {}) });
       }
     }
   }

@@ -17,6 +17,8 @@ import { ZodPipe } from '../common/zod.pipe';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
+import { FilesService } from '../files/files.service';
+import { TranscribeService } from '../voice/transcribe.service';
 import { open, seal } from '../powers/crypto';
 import { ChannelsService, type OutboundRow } from './channels.service';
 import * as meta from './meta';
@@ -66,6 +68,8 @@ export class MetaChannelsService implements OnModuleInit {
     private readonly aria: AriaService,
     private readonly conversations: ConversationsService,
     private readonly audit: AuditService,
+    private readonly files: FilesService,
+    private readonly stt: TranscribeService,
   ) {}
 
   onModuleInit() {
@@ -262,6 +266,24 @@ export class MetaChannelsService implements OnModuleInit {
       const channelMessageId = `${PREFIX[m.channel]}:${m.messageId}`;
       if (await tx.one(`SELECT 1 FROM messages WHERE channel_message_id = $1`, [channelMessageId])) return null; // Meta retries; never twice.
 
+      // A voice note: kept as audio, understood as text (the transcript is what Aria reads).
+      let voice: Record<string, unknown> | null = null;
+      if (m.audio) {
+        voice = { fileId: null, language: null, confidence: null, heard: false };
+        try {
+          const creds = open<Creds>(conn.encrypted_tokens);
+          if (!creds) throw new Error('no token');
+          const media = await meta.downloadMedia(m.audio, creds.token);
+          voice.fileId = await this.files.save(tx, { purpose: 'voice', mime: media.mime, data: media.data });
+          const t = await this.stt.transcribe(media.data, media.mime);
+          if (t?.text) {
+            m = { ...m, text: t.text };
+            voice = { ...voice, language: t.language, confidence: t.confidence, heard: true, provider: t.provider };
+          }
+        } catch (e) {
+          logger.warn(`voice note not understood: ${(e as Error).message}`, 'Channels');
+        }
+      }
       const customer = await this.customerFor(tx, m, conn);
       const optingOut = STOP.test(m.text);
       const optingIn = START.test(m.text);
@@ -277,7 +299,7 @@ export class MetaChannelsService implements OnModuleInit {
       } else if (!conv.customer_id) {
         await tx.q(`UPDATE conversations SET customer_id = $2 WHERE id = $1`, [conv.id, customer.id]);
       }
-      await this.conversations.addMessage(tx, conv.id, { direction: 'in', sender: 'customer', body: m.text, channelMessageId });
+      await this.conversations.addMessage(tx, conv.id, { direction: 'in', sender: 'customer', body: m.text, channelMessageId, language: (voice?.language as string) ?? null, meta: voice ? { voice } : undefined });
       if (optingOut || optingIn) {
         // Confirm without Aria. Customers can always stop messages from a business.
         await this.conversations.addMessage(tx, conv.id, {

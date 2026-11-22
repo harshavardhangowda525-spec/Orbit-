@@ -7,11 +7,11 @@ import type { Tenant } from '../auth/types';
 import { badRequest, notFound } from '../common/errors';
 import { logger } from '../logger';
 
-export const FILE_PURPOSES = ['price_list', 'card', 'hours', 'bill', 'settlement'] as const;
+export const FILE_PURPOSES = ['price_list', 'card', 'hours', 'bill', 'settlement', 'voice'] as const;
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_FILES = 5;
-const ALLOWED = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
+const ALLOWED = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf|audio\/(ogg|opus|mpeg|mp3|mp4|m4a|x-m4a|aac|amr|webm|wav|x-wav|wave))$/;
 const BUCKET = 'orbit-private';
 
 /** Supabase Storage, when the server has the service key; otherwise files live in the database. */
@@ -43,6 +43,8 @@ export class FilesService {
   }
 
   async save(tx: Tx, f: { purpose: FilePurpose; mime: string; data: Buffer; userId?: string | null }): Promise<string> {
+    f = { ...f, mime: f.mime.split(';')[0].trim().toLowerCase() };
+    if (f.purpose === 'voice' ? !f.mime.startsWith('audio/') : f.mime.startsWith('audio/')) throw badRequest('file_type', 'That kind of file is not allowed here.');
     if (!ALLOWED.test(f.mime)) throw badRequest('file_type', 'Please upload a photo (JPG or PNG) or a PDF.');
     if (f.data.length > MAX_BYTES) throw badRequest('file_too_big', 'That file is over 10 MB. Please use a smaller photo.');
     const s = supabase();

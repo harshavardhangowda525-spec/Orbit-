@@ -5,6 +5,7 @@ import type { AiTool } from './provider';
 import type { KnowledgeService } from '../knowledge/knowledge.service';
 import type { BookingsService } from '../bookings/bookings.service';
 import type { NudgeService } from '../nudge/nudge.service';
+import type { BookingChangesService } from '../bookings/booking-changes.service';
 import { postFeed } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { AppError } from '../common/errors';
@@ -18,7 +19,7 @@ export interface ToolContext {
   channel: string;
   language: string;
   now: Date;
-  services: { knowledge: KnowledgeService; bookings: BookingsService; nudge: NudgeService };
+  services: { knowledge: KnowledgeService; bookings: BookingsService; nudge: NudgeService; changes?: BookingChangesService };
   /** Set by tools; read by the runner after the turn. */
   effects: { handover?: { reason: string }; customerId?: string | null; quotedAmounts: number[] };
 }
@@ -94,7 +95,15 @@ export const TOOLS = {
          WHERE bk.customer_id = $1 AND bk.status IN ('pending','confirmed') AND bk.start_at > now() ORDER BY bk.start_at LIMIT 5`,
         [id],
       );
-      return { known: true, name: c?.name, has_phone: !!c?.phone, upcoming: await Promise.all(upcoming.map(async (u) => ({ booking_id: u.id, service: u.service, when: await localLabel(ctx, new Date(u.start_at)) }))) };
+      const ctxB = await ctx.services.bookings.context(ctx.tx);
+      const freeHours = Number(ctxB.policies?.cancellation_hours ?? ctxB.booking_policy?.freeCancelHours ?? 2);
+      return {
+        known: true, name: c?.name, has_phone: !!c?.phone, free_cancellation_hours_before: freeHours,
+        upcoming: await Promise.all(upcoming.map(async (u) => ({
+          booking_id: u.id, service: u.service, when: await localLabel(ctx, new Date(u.start_at)),
+          free_to_change: new Date(u.start_at).getTime() - ctx.now.getTime() > freeHours * 3_600_000,
+        }))),
+      };
     },
   }),
   upsert_customer: def({
@@ -174,12 +183,52 @@ export const TOOLS = {
       const own = cid && (await ctx.tx.one(`SELECT 1 FROM bookings WHERE id = $1 AND customer_id = $2`, [i.booking_id, cid]));
       if (!own) return { ok: false, error: 'That booking does not belong to this customer.' };
       try {
+        const b = await ctx.tx.one(`SELECT start_at FROM bookings WHERE id = $1`, [i.booking_id]);
+        const pc = await ctx.services.bookings.context(ctx.tx);
+        const freeHours = Number(pc.policies?.cancellation_hours ?? pc.booking_policy?.freeCancelHours ?? 2);
+        const late = new Date(b.start_at).getTime() - ctx.now.getTime() < freeHours * 3_600_000;
         await ctx.services.bookings.cancel(ctx.tx, i.booking_id, ctx.agent === 'vox' ? 'customer on the phone' : 'customer via chat', ctx.agent === 'vox' ? 'vox' : 'aria');
-        return { ok: true };
+        return late
+          ? { ok: true, late_cancellation: true, note: `This was within ${freeHours} hours of the time. Mention the cancellation policy kindly (from Policies), never invent a fee.` }
+          : { ok: true };
       } catch (e) {
         if (e instanceof AppError) return { ok: false, error: (e.getResponse() as any).error.message };
         throw e;
       }
+    },
+  }),
+  running_late: def({
+    description: "The customer says they are running late ('10 min late', 'thoda late ho jaunga', 'ಸ್ವಲ್ಪ ತಡ'). Use their upcoming booking (get_customer) and the minutes they said. If it fits the team is told; if not you get other times to offer.",
+    input: z.object({ booking_id: z.string().uuid(), minutes: z.number().int().min(1).max(240) }),
+    schema: obj({ booking_id: uuid, minutes: { type: 'integer', description: 'How many minutes late' } }, ['booking_id', 'minutes']),
+    async run(ctx, i) {
+      return ctx.services.changes!.runningLate(ctx.tx, await currentCustomer(ctx), i.booking_id, i.minutes, ctx.agent === 'vox' ? 'vox' : 'aria', ctx.language);
+    },
+  }),
+  add_to_booking: def({
+    description: "The customer wants to add a service to their existing booking ('can I also get a beard trim?'). Added only if there is time after it; the price comes from the service list.",
+    input: z.object({ booking_id: z.string().uuid(), service_id: z.string().uuid() }),
+    schema: obj({ booking_id: uuid, service_id: uuid }, ['booking_id', 'service_id']),
+    async run(ctx, i) {
+      const r: any = await ctx.services.changes!.addToBooking(ctx.tx, await currentCustomer(ctx), i.booking_id, i.service_id, ctx.agent === 'vox' ? 'vox' : 'aria');
+      if (r.price != null) ctx.effects.quotedAmounts.push(Number(r.price));
+      return r;
+    },
+  }),
+  confirm_booking: def({
+    description: "The customer confirms they are coming ('yes', 'confirmed', 'haan aa rahi hoon') to an upcoming booking, e.g. after a reminder.",
+    input: z.object({ booking_id: z.string().uuid() }),
+    schema: obj({ booking_id: uuid }, ['booking_id']),
+    async run(ctx, i) {
+      return ctx.services.changes!.confirm(ctx.tx, await currentCustomer(ctx), i.booking_id, ctx.agent === 'vox' ? 'vox' : 'aria');
+    },
+  }),
+  join_waitlist: def({
+    description: "No suitable time is free and the customer wants to be told if one opens up. wanted_date is YYYY-MM-DD local, or omit for any day.",
+    input: z.object({ service_id: z.string().uuid(), wanted_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
+    schema: obj({ service_id: uuid, wanted_date: { type: 'string', description: 'YYYY-MM-DD, or omit for any day' } }, ['service_id']),
+    async run(ctx, i) {
+      return ctx.services.changes!.joinWaitlist(ctx.tx, await currentCustomer(ctx), i.service_id, i.wanted_date ?? null, ctx.agent === 'vox' ? 'vox' : 'aria');
     },
   }),
   create_lead: def({

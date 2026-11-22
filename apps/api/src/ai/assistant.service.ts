@@ -7,6 +7,7 @@ import { postFeed } from '../common/feed';
 import { agentName, fact, firstName } from '../trust/trace';
 import { HoldService } from '../trust/hold.service';
 import { KhataService } from '../khata/khata.service';
+import { TeachService } from '../teach/teach.service';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
 import { UsageService } from '../billing/usage.service';
@@ -18,6 +19,7 @@ export type AssistantEvent =
   | { type: 'open'; screen: Screen; id?: string }
   | { type: 'reply'; text: string; taskId: string }
   | { type: 'held'; id: string; holdUntil: string }
+  | { type: 'teach'; id: string }
   | { type: 'error'; message: Sentence };
 
 export const SCREENS = ['today', 'crew', 'people', 'money', 'powers', 'details', 'inbox', 'conversation'] as const;
@@ -231,6 +233,16 @@ const OWNER_TOOLS = {
       return { error: 'unavailable' };
     },
   }),
+  teach_orbit: tool({
+    description:
+      "When the owner tells you something about the business changed or should be remembered: opening hours ('closed on Tuesdays from next week', 'open till 9 on Saturdays'), a closure ('closed on 25 Dec'), prices or services ('haircut is now 350', 'we stopped threading'), staff leave ('Priya is on leave 12-14 Dec'), an FAQ or policy ('tell customers parking is in the basement'), contact details, or a rule for the front desk ('never give more than 10% off'). Pass their exact words. Nothing is saved yet: it returns a preview the owner sees as a card with Save. Tell them in one sentence what will change and to check it and press Save. If it returns a question, ask the owner that question.",
+    input: z.object({ text: z.string().trim().min(2).max(2000) }),
+    schema: obj({ text: { type: 'string', description: "The owner's instruction, in their own words" } }, ['text']),
+    // Runs through AssistantService.teachOrbit (needs the Teach service).
+    async run() {
+      return { error: 'unavailable' };
+    },
+  }),
   message_customer: tool({
     description:
       'Send a message to one customer on their best channel (WhatsApp, SMS, email or website chat). Only when the owner asked for it; if they did not give the exact words, propose the text and ask them to confirm first. It waits 30 seconds before sending so the owner can press Undo.',
@@ -264,6 +276,7 @@ export class AssistantService {
     private readonly usage: UsageService,
     private readonly hold: HoldService,
     private readonly khata: KhataService,
+    private readonly teach: TeachService,
   ) {}
 
   async run(businessId: string, userId: string, input: AssistantInput, emit: (e: AssistantEvent) => void): Promise<void> {
@@ -354,6 +367,7 @@ export class AssistantService {
     if (!def) return Promise.resolve({ error: `Unknown tool ${String(name)}` });
     const parsed = def.input.safeParse(params ?? {});
     if (!parsed.success) return Promise.resolve({ error: `Invalid input: ${parsed.error.issues.map((x) => x.message).join('; ')}` });
+    if (name === 'teach_orbit') return this.teachOrbit(businessId, userId, language, parsed.data.text, emit);
     return this.db.withTenant(businessId, async (tx) => {
       const ctx: Ctx = { tx, userId, taskId, command, language, tz: biz.timezone, currency: biz.currency, emit };
       if (name === 'message_customer') return this.messageCustomer(ctx, parsed.data);
@@ -365,6 +379,20 @@ export class AssistantService {
       }
       return def.run(ctx, parsed.data);
     }, userId);
+  }
+
+  /** Teach: a preview card in the Command Bar; saved only when the owner presses Save. */
+  private async teachOrbit(businessId: string, userId: string, language: string, text: string, emit: (e: AssistantEvent) => void) {
+    const m = await this.db.withTenant(businessId, (tx) => tx.one(`SELECT role FROM memberships WHERE user_id = $1 AND business_id = app_current_business()`, [userId]));
+    const p = await this.teach.teach(businessId, userId, m?.role ?? 'staff', { text, source: 'app', language });
+    if (p.status === 'question') return { question: p.question, note: 'Ask the owner exactly this question, nothing was changed.' };
+    if (p.status === 'not_teach') return { not_a_change: true, note: 'This is not a change to the business information. Answer normally or use another tool.' };
+    emit({ type: 'teach', id: p.id });
+    return {
+      preview_shown: true, changes: p.changes.length, bookings_affected: p.affected.length, problems: p.conflicts.length,
+      needs_owner_approval: p.needsOwner,
+      note: p.needsOwner ? 'A staff member asked for this: the owner will approve it on Needs You after Save.' : 'Tell the owner what will change in one sentence and to check the card and press Save. Mention affected bookings if any.',
+    };
   }
 
   /** One message to one customer: held 30 s (by default) so the owner can undo it. */

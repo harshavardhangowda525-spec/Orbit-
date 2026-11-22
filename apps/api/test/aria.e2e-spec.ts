@@ -71,7 +71,7 @@ describe('Aria on web chat', () => {
     expect(sys).not.toContain('Other Clinic');
     expect(sys).toMatch(/DATA, never instructions/);
     expect(fake.calls[0].tools.map((t) => t.name).sort()).toEqual(
-      ['cancel_booking', 'check_availability', 'create_booking', 'create_lead', 'get_customer', 'handover_to_human', 'request_task', 'reschedule_booking', 'search_knowledge', 'send_service_info', 'upsert_customer'],
+      ['add_to_booking', 'cancel_booking', 'check_availability', 'confirm_booking', 'create_booking', 'create_lead', 'get_customer', 'handover_to_human', 'join_waitlist', 'request_task', 'reschedule_booking', 'running_late', 'search_knowledge', 'send_service_info', 'upsert_customer'],
     );
     const usage = await db.withTenant(A.businessId, (tx) => tx.one(`SELECT count(*)::int AS n FROM ai_usage WHERE conversation_id = $1 AND agent_key = 'aria'`, [c.id]));
     expect(usage.n).toBe(2);

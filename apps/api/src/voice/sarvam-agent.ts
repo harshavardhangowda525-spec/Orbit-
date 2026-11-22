@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { DbService, type Tx } from '../db/db.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { BookingChangesService } from '../bookings/booking-changes.service';
 import { NudgeService } from '../nudge/nudge.service';
 import { ConversationsService } from '../inbox/conversations.service';
 import { AuditService } from '../audit/audit.service';
@@ -61,6 +62,7 @@ export class SarvamAgentService {
     private readonly nudge: NudgeService,
     private readonly conversations: ConversationsService,
     private readonly audit: AuditService,
+    private readonly changes: BookingChangesService,
   ) {}
 
   // ---------------------------------------------------------- owner setup
@@ -118,7 +120,7 @@ export class SarvamAgentService {
       await tx.q(`UPDATE power_connections SET last_sync_at = now() WHERE id = $1`, [auth.power_connection_id]);
       const ctx: ToolContext = {
         tx, agent: 'vox', conversationId: call.conversationId, channel: 'phone', language, now: new Date(),
-        services: { knowledge: this.knowledge, bookings: this.bookings, nudge: this.nudge },
+        services: { knowledge: this.knowledge, bookings: this.bookings, nudge: this.nudge, changes: this.changes },
         effects: { quotedAmounts: [], customerId: call.customerId },
       };
       return fn(tx, ctx, call);

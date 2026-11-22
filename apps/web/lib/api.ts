@@ -159,11 +159,11 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 
 /** Download a file from the API (CSV/JSON exports) with the sign-in and admin session. */
 /** Upload photos/PDFs (multipart). The browser sets the multipart content type. */
-export async function apiUpload<T = any>(path: string, files: Blob[], names: string[] = []): Promise<T> {
+export async function apiUpload<T = any>(path: string, files: Blob[], names: string[] = [], field = 'files'): Promise<T> {
   const headers = await authHeaders(true, path);
   delete headers['content-type'];
   const form = new FormData();
-  files.forEach((f, i) => form.append('files', f, names[i] ?? `photo-${i + 1}.${f.type === 'application/pdf' ? 'pdf' : 'jpg'}`));
+  files.forEach((f, i) => form.append(field, f, names[i] ?? `photo-${i + 1}.${f.type === 'application/pdf' ? 'pdf' : 'jpg'}`));
   let res: Response;
   try {
     res = await fetch(`${apiUrl()}${path}`, { method: 'POST', headers, body: form });

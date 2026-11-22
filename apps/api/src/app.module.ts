@@ -30,6 +30,8 @@ import { TrustModule } from './trust/trust.controller';
 import { FilesModule } from './files/files.service';
 import { SnapModule } from './snap/snap.controller';
 import { KhataModule } from './khata/khata.controller';
+import { TeachModule } from './teach/teach.controller';
+import { TranscribeModule } from './voice/transcribe.service';
 
 @Controller()
 class HealthController {
@@ -51,6 +53,8 @@ class HealthController {
     FilesModule,
     SnapModule,
     KhataModule,
+    TeachModule,
+    TranscribeModule,
     BookingsModule,
     KnowledgeModule,
     AiModule,

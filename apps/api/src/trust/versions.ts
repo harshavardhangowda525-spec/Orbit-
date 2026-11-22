@@ -14,9 +14,16 @@ const ENTITIES = {
   profile: { table: 'business_profiles', key: 'business_id', cols: ['review_url', 'hold_seconds', 'review_before_send'] },
   expense: { table: 'expenses', key: 'id', cols: ['category', 'total', 'bill_date', 'books_month', 'vendor_name', 'status', 'deleted_at'] },
   revenue_entry: { table: 'revenue_entries', key: 'id', cols: ['amount', 'mode', 'entry_date', 'note', 'deleted_at'] },
+  // What Teach Orbit changes (kept apart from the safety settings above so each can be undone on its own).
+  business_info: {
+    table: 'business_profiles', key: 'business_id',
+    cols: ['hours', 'holidays', 'hours_changes', 'guardrails', 'social_links', 'policies', 'website', 'phone', 'whatsapp', 'address', 'description'],
+  },
+  service: { table: 'services', key: 'id', cols: ['name', 'price', 'duration_min', 'active', 'deleted_at'] },
+  staff: { table: 'staff', key: 'id', cols: ['leave'] },
 } as const;
 export type VersionedEntity = keyof typeof ENTITIES;
-const JSON_COLS = new Set(['auto_approval_rules', 'hold_seconds', 'review_before_send']);
+const JSON_COLS = new Set(['auto_approval_rules', 'hold_seconds', 'review_before_send', 'hours', 'holidays', 'hours_changes', 'guardrails', 'social_links', 'policies', 'leave']);
 
 /** Current values of the versioned columns (null if the row does not exist). */
 export async function snapshot(tx: Tx, entity: VersionedEntity, id: string) {
@@ -55,6 +62,7 @@ export async function revertVersion(tx: Tx, id: string, userId: string | null) {
     if (v.entity_type === 'knowledge_item') await tx.q(`UPDATE knowledge_items SET deleted_at = now() WHERE id = $1`, [v.entity_id]);
     else if (v.entity_type === 'expense') await tx.q(`UPDATE expenses SET status = 'deleted', deleted_at = now() WHERE id = $1`, [v.entity_id]);
     else if (v.entity_type === 'revenue_entry') await tx.q(`UPDATE revenue_entries SET deleted_at = now() WHERE id = $1`, [v.entity_id]);
+    else if (v.entity_type === 'service') await tx.q(`UPDATE services SET deleted_at = now(), active = false WHERE id = $1`, [v.entity_id]);
     else throw badRequest('cannot_undo', 'This change cannot be undone.');
   } else {
     const cols = e.cols.filter((c) => c in v.before);

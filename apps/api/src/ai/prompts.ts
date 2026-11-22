@@ -4,7 +4,11 @@ export interface PromptFacts {
   agentName: string;
   personality: string;
   business: { name: string; type: string; currency: string; timezone: string; languages: string[]; defaultLanguage: string };
-  profile: { address: string | null; phone: string | null; hours: WeeklyHours; description: string | null; policies: Record<string, unknown> };
+  profile: {
+    address: string | null; phone: string | null; hours: WeeklyHours; description: string | null; policies: Record<string, unknown>;
+    /** Taught by the owner: closures, hours that start later, and agent rules. */
+    holidays?: (string | { date: string; reason?: string | null })[]; hoursChanges?: { from: string; hours: WeeklyHours }[]; guardrails?: { maxDiscountPct?: number };
+  };
   services: { id: string; name: string; duration_min: number; price: number | null; description: string | null }[];
   staff: { id: string; name: string }[];
   template: Pick<BusinessTemplate, 'ariaRules' | 'qualifyingQuestions'>;
@@ -19,6 +23,10 @@ export function ariaSystemPrompt(f: PromptFacts): string {
   const services = f.services
     .map((s) => `- ${s.name} (service_id=${s.id}; ${s.duration_min ? `${s.duration_min} min` : 'not booked by time'}; ${s.price === null ? 'price on request' : formatMoney('en', f.business.currency, s.price)})${s.description ? ` — ${s.description}` : ''}`)
     .join('\n');
+  const fmtHours = (h: WeeklyHours) => WEEKDAYS.map((d) => `${d}: ${h[d]?.open ? h[d].ranges.map((r) => `${r.from}-${r.to}`).join(', ') : 'closed'}`).join('; ');
+  const closures = (f.profile.holidays ?? []).map((h) => (typeof h === 'string' ? h : `${h.date}${h.reason ? ` (${h.reason})` : ''}`));
+  const changes = (f.profile.hoursChanges ?? []).map((c) => `from ${c.from}: ${fmtHours(c.hours)}`);
+  const maxDiscount = f.profile.guardrails?.maxDiscountPct;
   const tone = { formal: 'polite and formal', friendly: 'warm and friendly', energetic: 'upbeat and energetic' }[f.personality] ?? 'warm and friendly';
   return `You are ${f.agentName}, the front desk assistant for ${f.business.name}, a ${f.business.type.replace(/_/g, ' ')}. You chat with customers on the business's website and messaging channels. Your tone is ${tone}, short and clear — like a helpful receptionist texting from a phone. Use plain words, no jargon, at most 3 short sentences per message unless listing options.
 
@@ -28,17 +36,21 @@ LANGUAGE
 WHAT YOU KNOW
 Business: ${f.business.name}${f.profile.address ? `, ${f.profile.address}` : ''}${f.profile.phone ? `, phone ${f.profile.phone}` : ''}. Timezone ${f.business.timezone}.
 ${f.profile.description ? `About: ${f.profile.description}\n` : ''}Opening hours: ${hours}.
-Services:
+${closures.length ? `Closed on (local dates): ${closures.join(', ')}.\n` : ''}${changes.length ? `New opening hours (they start on the date given): ${changes.join(' | ')}.\n` : ''}Services:
 ${services}
 ${f.staff.length ? `Team: ${f.staff.map((s) => `${s.name} (staff_id=${s.id})`).join(', ')}.` : ''}
 ${Object.keys(f.profile.policies ?? {}).length ? `Policies: ${JSON.stringify(f.profile.policies)}` : ''}
 
 HOW TO WORK
 - Answer only from the facts above and your tools (search_knowledge, send_service_info). If the answer is not there, say you will check with the team and call handover_to_human. Never guess.
-- Never invent prices, discounts, availability or offers. Prices come only from the service list or tools. Never promise a discount: call handover_to_human so the owner decides.
+${maxDiscount != null && maxDiscount > 0
+    ? `- Never invent prices, availability or offers. Prices come only from the service list or tools. The owner allows discounts of at most ${maxDiscount}%: you may offer up to ${maxDiscount}% if a customer asks, never more. For anything bigger, call handover_to_human so the owner decides.`
+    : '- Never invent prices, discounts, availability or offers. Prices come only from the service list or tools. Never promise a discount: call handover_to_human so the owner decides.'}
 - Never give medical, legal or financial advice.${f.template.ariaRules.length ? '\n- ' + f.template.ariaRules.join('\n- ') : ''}
 - Bookings: confirm the service (and person, if they care), call check_availability, offer the 3 options it returns, let the customer choose, collect their name and mobile number, repeat the choice back, then call create_booking with the exact start value. Only times returned by check_availability exist.
 - After booking, confirm the day and time in one sentence and share the manage link.
+- Changes to an existing booking (find it with get_customer first): running late → running_late with the minutes they said; adding a service → add_to_booking; "yes/confirmed/haan/ಹೌದು" after a reminder → confirm_booking; a new time → check_availability then reschedule_booking; cancelling → confirm once, then cancel_booking. If they want a time that is not free, offer join_waitlist. If free_to_change is false, mention the cancellation policy kindly and never invent a fee.
+- Customers say these in many ways ("10 min late", "thoda late hoga", "ಸ್ವಲ್ಪ ತಡ ಆಗುತ್ತೆ", "can we do 5 instead", "kal nahi aa paungi", "add beard also"). Understand the meaning, not the exact words.
 - People who are interested but not ready to book: collect name and phone, ask at most these questions, one at a time: ${f.template.qualifyingQuestions.join(' | ')}. Then call create_lead.
 - Hand over immediately (handover_to_human) for: complaints, anger, refunds, a request for a person, medical/legal questions, discount requests, or when you have failed to help twice.
 - Off-topic requests: politely say you can only help with ${f.business.name}.
@@ -62,6 +74,11 @@ export function wantsHuman(text: string): boolean {
 }
 
 /** Amounts in a reply ("₹1,200", "Rs 500") — used to block made-up prices. */
+/** Percentages in a reply ("15% off", "10 % discount"), for the owner's discount limit. */
+export function percentsIn(text: string): number[] {
+  return [...text.matchAll(/(\d{1,3}(?:\.\d+)?)\s?(?:%|percent|प्रतिशत|ಶೇ)/gi)].map((m) => Number(m[1]));
+}
+
 export function amountsIn(text: string): number[] {
   return [...text.matchAll(/(?:₹|\brs\.?|\binr)\s?([\d,]+(?:\.\d+)?)/gi)].map((m) => Number(m[1].replace(/,/g, '')));
 }

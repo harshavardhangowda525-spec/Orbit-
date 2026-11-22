@@ -5,6 +5,7 @@ import { agentName, fact, firstName, recordTrace } from '../trust/trace';
 import { TemplatesService } from '../templates/templates.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { BookingChangesService } from '../bookings/booking-changes.service';
 import { NudgeService } from '../nudge/nudge.service';
 import { ConversationsService } from '../inbox/conversations.service';
 import { UsageService } from '../billing/usage.service';
@@ -12,7 +13,8 @@ import { finishActivity, startActivity } from '../common/feed';
 import { liveToBusiness } from '../realtime/live';
 import { logger } from '../logger';
 import { AiService } from './ai.service';
-import { ariaSystemPrompt, amountsIn, detectLanguage, wantsHuman } from './prompts';
+import { LOW_CONFIDENCE } from '../voice/transcribe.service';
+import { ariaSystemPrompt, amountsIn, detectLanguage, percentsIn, wantsHuman } from './prompts';
 import { runTool, todayLabel, toolsFor, type ToolContext } from './tools';
 import type { AiBlock, AiMessage } from './provider';
 
@@ -25,6 +27,9 @@ export interface AriaResult {
   handover?: boolean;
   reason?: string;
 }
+
+/** Read-only tools while Aria checks what an unclear voice note said. */
+const CLARIFY_TOOLS = ['search_knowledge', 'send_service_info', 'get_customer', 'check_availability', 'handover_to_human'];
 
 /**
  * Aria — front desk. Runs one turn of the agent loop for a conversation:
@@ -43,19 +48,20 @@ export class AriaService {
     private readonly nudge: NudgeService,
     private readonly conversations: ConversationsService,
     private readonly usage: UsageService,
+    private readonly changes: BookingChangesService,
   ) {}
 
   async reply(businessId: string, conversationId: string, now = new Date()): Promise<AriaResult> {
     const prep = await this.db.withTenant(businessId, async (tx) => {
       const conv = await tx.one(`SELECT * FROM conversations WHERE id = $1`, [conversationId]);
       if (!conv) return null;
-      const biz = await tx.one(`SELECT b.*, p.address, p.phone, p.hours, p.description, p.policies FROM businesses b JOIN business_profiles p ON p.business_id = b.id WHERE b.id = $1`, [businessId]);
+      const biz = await tx.one(`SELECT b.*, p.address, p.phone, p.hours, p.description, p.policies, p.holidays, p.hours_changes, p.guardrails FROM businesses b JOIN business_profiles p ON p.business_id = b.id WHERE b.id = $1`, [businessId]);
       // Phone calls are answered by Vox with the same knowledge and tools.
       const agentKey: 'aria' | 'vox' = conv.channel === 'phone' ? 'vox' : 'aria';
       const agent = await tx.one(`SELECT display_name, personality, enabled FROM agents WHERE agent_key = $1`, [agentKey]);
       const services = await tx.q(`SELECT id, name, duration_min, price::float AS price, description FROM services WHERE active AND deleted_at IS NULL ORDER BY sort_order`);
       const staff = await tx.q(`SELECT id, name FROM staff WHERE active AND deleted_at IS NULL ORDER BY created_at`);
-      const history = await tx.q(`SELECT direction, sender, body FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT $2`, [conversationId, HISTORY]);
+      const history = await tx.q(`SELECT direction, sender, body, meta FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT $2`, [conversationId, HISTORY]);
       const customer = conv.customer_id ? await tx.one(`SELECT name FROM customers WHERE id = $1`, [conv.customer_id]) : null;
       // Plan allowance (daily / monthly, with grace for chats already under way). Customers never hear about it.
       const allowance = conv.handled_by === 'aria' ? await this.usage.check(tx, conversationId, now) : { allowed: true };
@@ -78,6 +84,10 @@ export class AriaService {
       await this.db.withTenant(businessId, (tx) => this.usage.park(tx, conversationId, prep.overLimit!, language, now));
       return { replied: false, handover: true, reason: 'limit' };
     }
+    // A voice note Orbit could not hear at all: ask them to send it again or type it.
+    const voice = lastIn.meta?.voice;
+    if (voice && !voice.heard) return this.finish(businessId, conversationId, agentKey, say('aria.auto.voice_unclear'), {});
+    const unsure = !!voice && voice.confidence != null && voice.confidence < LOW_CONFIDENCE;
     if (wantsHuman(lastIn.body)) return this.finish(businessId, conversationId, agentKey, say('aria.auto.handover'), { handover: 'Customer asked for a person' });
 
     const template = await this.templates.get(biz.type as BusinessType);
@@ -85,7 +95,7 @@ export class AriaService {
       agentName: agent.display_name,
       personality: agent.personality,
       business: { name: biz.name, type: biz.type, currency: biz.currency, timezone: biz.timezone, languages: biz.supported_languages, defaultLanguage: biz.default_language },
-      profile: { address: biz.address, phone: biz.phone, hours: biz.hours, description: biz.description, policies: biz.policies },
+      profile: { address: biz.address, phone: biz.phone, hours: biz.hours, description: biz.description, policies: biz.policies, holidays: biz.holidays, hoursChanges: biz.hours_changes, guardrails: biz.guardrails },
       services: prep.services,
       staff: prep.staff,
       template,
@@ -96,7 +106,14 @@ export class AriaService {
       role: 'system' as any,
       content: `Now: ${todayLabel(now, biz.timezone)} local time. Customer language: ${language}.${prep.customer?.name ? ` Customer: ${prep.customer.name}.` : ' Customer not identified yet.'} Channel: ${conv.channel}.`,
     } as any);
-    const tools = toolsFor(agentKey);
+    // Not sure what was said in the voice note: look things up, but change nothing until the customer confirms.
+    const tools = unsure ? toolsFor(agentKey).filter((t) => CLARIFY_TOOLS.includes(t.name)) : toolsFor(agentKey);
+    if (unsure) {
+      messages.push({
+        role: 'system' as any,
+        content: `The customer sent a voice note and the transcript may be wrong (heard: "${lastIn.body.slice(0, 300)}"). Do not book, move or cancel anything yet. Reply with one short question that repeats what you understood and asks them to confirm, in their language.`,
+      } as any);
+    }
     const effects: ToolContext['effects'] = { quotedAmounts: prep.services.filter((s) => s.price !== null).map((s) => Number(s.price)) };
     const who = prep.customer?.name?.split(' ')[0] ?? null;
     const taskId = await this.db.withTenant(businessId, (tx) =>
@@ -120,7 +137,7 @@ export class AriaService {
         const results: any[] = [];
         for (const call of calls) {
           const out = await this.db.withTenant(businessId, (tx) =>
-            runTool({ tx, agent: agentKey, conversationId, channel: conv.channel, language, now, services: { knowledge: this.knowledge, bookings: this.bookings, nudge: this.nudge }, effects }, call.name, call.input),
+            runTool({ tx, agent: agentKey, conversationId, channel: conv.channel, language, now, services: { knowledge: this.knowledge, bookings: this.bookings, nudge: this.nudge, changes: this.changes }, effects }, call.name, call.input),
           ).catch((e) => {
             logger.error(`tool ${call.name} failed: ${e.message}`, e.stack, 'Aria');
             return { content: JSON.stringify({ error: 'That did not work. Offer to have the team follow up.' }), isError: true };
@@ -141,6 +158,14 @@ export class AriaService {
       logger.warn(`blocked reply with unverified amounts ${invented.join(',')}`, 'Aria');
       finalText = say('aria.auto.check_price');
       effects.handover ??= { reason: 'Customer asked about a price Orbit could not confirm' };
+    }
+    // The owner's discount limit (taught: "never give more than 10% off") is checked here, not just asked for.
+    const maxDiscount = Number(biz.guardrails?.maxDiscountPct ?? 0);
+    const tooBig = percentsIn(finalText).filter((p) => p > maxDiscount);
+    if (tooBig.length && /\boff\b|discount|छूट|डिस्काउंट|ರಿಯಾಯಿತಿ|ಡಿಸ್ಕೌಂಟ್/i.test(finalText)) {
+      logger.warn(`blocked reply offering ${tooBig.join(',')}% (limit ${maxDiscount}%)`, 'Aria');
+      finalText = say('aria.auto.discount_check');
+      effects.handover ??= { reason: maxDiscount ? `Customer wants more than the ${maxDiscount}% discount limit` : 'Customer asked for a discount' };
     }
     if (!finalText) finalText = say(effects.handover ? 'aria.auto.handover' : 'aria.auto.trouble');
     await this.db.withTenant(businessId, (tx) => finishActivity(tx, taskId, 'done', { handover: !!effects.handover }));

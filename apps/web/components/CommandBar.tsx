@@ -5,8 +5,8 @@ import type { Sentence } from '@orbit/shared';
 import { apiStream, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useCycle } from '@/lib/motion';
-
-const SPEECH_LANG: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', kn: 'kn-IN' };
+import { useVoiceInput } from '@/lib/voice';
+import { TeachCard } from './teach/TeachCard';
 
 export type OrbitScreen = 'today' | 'crew' | 'people' | 'money' | 'powers' | 'details' | 'inbox' | 'conversation';
 type Turn = { role: 'owner' | 'orbit'; text: string };
@@ -15,8 +15,8 @@ type Turn = { role: 'owner' | 'orbit'; text: string };
  * One conversation shared by every Command Bar on the page, so when Orbit opens
  * another screen (and that screen's bar mounts), the answer keeps arriving there.
  */
-type ChatState = { asked: string | null; steps: Sentence[]; reply: string | null; error: Sentence | string | null; busy: boolean };
-let chat: ChatState = { asked: null, steps: [], reply: null, error: null, busy: false };
+type ChatState = { asked: string | null; steps: Sentence[]; reply: string | null; error: Sentence | string | null; busy: boolean; teachId: string | null };
+let chat: ChatState = { asked: null, steps: [], reply: null, error: null, busy: false, teachId: null };
 let history: Turn[] = [];
 const listeners = new Set<() => void>();
 const setChat = (patch: Partial<ChatState> | ((c: ChatState) => Partial<ChatState>)) => {
@@ -45,9 +45,10 @@ export function prefillCommand(text: string) {
 export function CommandBar({ suggestions, onDone, onOpen, running = true }: { suggestions: string[]; onDone: () => void; onOpen?: (screen: OrbitScreen, id?: string) => void; running?: boolean }) {
   const { t, ts, lang } = useI18n();
   const [text, setText] = useState('');
-  const { asked, steps, reply, error, busy } = useChat();
-  const [listening, setListening] = useState(false);
-  const rec = useRef<any>(null);
+  const { asked, steps, reply, error, busy, teachId } = useChat();
+  // Hold to talk: the browser's speech recognition, or a recording Orbit writes down.
+  const voice = useVoiceInput(lang, (v) => setText(v));
+  const listening = voice.state !== 'idle';
   const hints = ['cmd.placeholder', ...suggestions.map((s) => `@${s}`)];
   const i = useCycle(hints.length, 2600, running && !text);
   const hint = hints[i].startsWith('@') ? t('cmd.try', { example: t(hints[i].slice(1)) }) : t(hints[i]);
@@ -56,18 +57,18 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
     prefills.add(f);
     return () => void prefills.delete(f);
   }, []);
-  const SR = typeof window !== 'undefined' ? (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition : null;
 
   async function send(value: string) {
     const q = value.trim();
     if (!q || chat.busy) return;
-    setChat({ asked: q, steps: [], reply: null, error: null, busy: true });
+    setChat({ asked: q, steps: [], reply: null, error: null, busy: true, teachId: null });
     setText('');
     try {
       await apiStream('/bridge/commands', { text: q, history: history.slice(-10), language: lang }, (e) => {
         if (e.type === 'step') setChat((c) => ({ steps: [...c.steps, e.label as Sentence] }));
         // Only move the screen while the owner is looking at it.
         else if (e.type === 'open' && document.visibilityState === 'visible') onOpen?.(e.screen, e.id);
+        else if (e.type === 'teach') setChat({ teachId: e.id });
         else if (e.type === 'reply') {
           setChat({ reply: e.text });
           history = [...history, { role: 'owner' as const, text: q }, { role: 'orbit' as const, text: e.text }].slice(-12);
@@ -79,18 +80,6 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
     } finally {
       setChat({ busy: false });
     }
-  }
-
-  function startListening() {
-    if (!SR || listening) return;
-    const r = new SR();
-    r.lang = SPEECH_LANG[lang] ?? 'en-IN';
-    r.interimResults = true;
-    r.onresult = (e: any) => setText(Array.from(e.results).map((x: any) => x[0].transcript).join(' '));
-    r.onend = () => setListening(false);
-    rec.current = r;
-    setListening(true);
-    r.start();
   }
 
   // Press "/" anywhere (outside a text field) to start typing to Orbit.
@@ -121,9 +110,10 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
             )}
             {busy && !steps.length && <div className="thinking">{t('assistant.thinking')}</div>}
             {reply && <div className="answer">{reply}</div>}
+            {teachId && <TeachCard key={teachId} id={teachId} onDone={onDone} />}
             {error && <div className="answer">{typeof error === 'string' ? error : ts(error)}</div>}
           </div>
-          <button className="link-btn" style={{ minHeight: 24, padding: 0 }} aria-label={t('common.close')} onClick={() => setChat({ asked: null, reply: null, error: null, steps: [] })}>×</button>
+          <button className="link-btn" style={{ minHeight: 24, padding: 0 }} aria-label={t('common.close')} onClick={() => setChat({ asked: null, reply: null, error: null, steps: [], teachId: null })}>×</button>
         </div>
       )}
       <form onSubmit={(e) => { e.preventDefault(); send(text); }}>
@@ -131,7 +121,7 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
           key={text ? 'typing' : `hint-${i}`}
           className={text ? '' : 'hint-fade'}
           aria-label={t('cmd.placeholder')}
-          placeholder={listening ? t('cmd.listening') : hint}
+          placeholder={voice.state === 'transcribing' ? t('voice.transcribing') : listening ? t('cmd.listening') : hint}
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={busy}
@@ -144,11 +134,11 @@ export function CommandBar({ suggestions, onDone, onOpen, running = true }: { su
             type="button"
             className={`mic ${listening ? 'on' : ''}`}
             aria-label={t('cmd.hold')}
-            onPointerDown={startListening}
-            onPointerUp={() => rec.current?.stop()}
-            onPointerLeave={() => rec.current?.stop()}
-            disabled={!SR}
-            title={SR ? t('cmd.hold') : t('cmd.no_voice')}
+            onPointerDown={voice.start}
+            onPointerUp={voice.stop}
+            onPointerLeave={voice.stop}
+            disabled={!voice.supported || voice.state === 'transcribing'}
+            title={voice.supported ? t('cmd.hold') : t('cmd.no_voice')}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
               <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />

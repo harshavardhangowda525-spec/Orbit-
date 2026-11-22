@@ -4,7 +4,7 @@ import '../../bridge/bridge.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { api, ApiError } from '@/lib/api';
+import { api, apiBlobUrl, ApiError } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { AppNav } from '@/components/AppNav';
 import { SpaceBackdrop } from '@/components/SpaceBackdrop';
@@ -88,7 +88,7 @@ export default function Conversation() {
             {data.messages.map((m: any) => (
               <div key={m.id} className={`bubble ${m.direction === 'in' ? 'out' : 'in'}`} style={m.direction === 'out' && m.sender === 'aria' ? { background: 'var(--aria)', color: 'var(--aria-ink)' } : undefined}>
                 <span className="who">{m.direction === 'in' ? (c?.name ?? t('details.visitor')) : m.sender === 'aria' ? 'Aria' : m.sender.startsWith('user:') ? t('inbox.team') : m.sender} · {fmt(m.at)}</span>
-                {m.body}
+                {m.voice ? <VoiceNote voice={m.voice} body={m.body} /> : m.body}
                 {m.direction === 'out' && !['website_chat', 'chat_link'].includes(m.channel) && (
                   m.deliveryStatus === 'failed'
                     ? <span className="delivery failed">{t('inbox.not_delivered', { reason: m.deliveryError ?? '' })}</span>
@@ -107,5 +107,24 @@ export default function Conversation() {
         </>
       )}
     </main>
+  );
+}
+
+/** A customer's voice note: play it, read what Orbit heard, and in which language. */
+function VoiceNote({ voice, body }: { voice: { fileId: string | null; language: string | null; confidence: number | null; heard: boolean }; body: string }) {
+  const { t } = useI18n();
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    if (voice.fileId) apiBlobUrl(`/files/${voice.fileId}`).then((u) => { url = u; setSrc(u); }).catch(() => null);
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [voice.fileId]);
+  return (
+    <span className="voice-note" data-testid="voice-note">
+      <span className="voice-tag">🎙 {t('inbox.voice_note')}{voice.language ? ` · ${t('inbox.voice_heard', { language: t(`lang.name.${voice.language}`) })}` : ''}</span>
+      {src && <audio controls preload="none" src={src} aria-label={t('inbox.voice_play')} />}
+      <span>{voice.heard ? body : <i>{t('inbox.voice_not_heard')}</i>}</span>
+      {voice.heard && voice.confidence != null && voice.confidence < 0.6 && <span className="voice-unsure">{t('inbox.voice_unsure')}</span>}
+    </span>
   );
 }

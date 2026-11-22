@@ -11,6 +11,7 @@ import { timeAgo } from './bridge/Feed';
 import { VoxPanel } from './VoxPanel';
 import { SafetyPanel } from './trust/SafetyPanel';
 import { ServicesCard } from './snap/ServicesCard';
+import { TeachPanel } from './teach/TeachPanel';
 
 function useLoad<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -225,6 +226,7 @@ export function DetailsView() {
   const upcoming = (cal?.bookings ?? []).filter((b) => new Date(b.endAt) > new Date() && b.status !== 'cancelled').slice(0, 20);
   return (
     <section className="stack">
+      <TeachPanel />
       <ServicesCard />
       <h2>{t('details.bookings')}</h2>
       <div className="card">

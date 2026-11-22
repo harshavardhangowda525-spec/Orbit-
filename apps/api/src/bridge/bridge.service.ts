@@ -9,6 +9,7 @@ import { UsageService } from '../billing/usage.service';
 import { groupFeed, type FeedItem } from './feed-group';
 import { HoldService } from '../trust/hold.service';
 import { KhataService } from '../khata/khata.service';
+import { TeachService } from '../teach/teach.service';
 
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -18,7 +19,7 @@ export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour 
 
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService, private readonly khata: KhataService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService, private readonly khata: KhataService, private readonly teach: TeachService) {}
 
   /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
   async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
@@ -230,6 +231,9 @@ export class BridgeService {
         // "How much did you take in cash today?" — the answer is that day's cash sale.
         if (!value) throw badRequest('amount', 'Please enter the amount, e.g. 8,500.');
         await this.khata.logSale(tx, { amount: value, mode: 'cash', date: card.context?.date, via: 'checkin' }, userId);
+      } else if (card.type === 'teach_approval') {
+        // A staff member taught a price or rule change: it is saved only if the owner approves.
+        await this.teach.decideCard(tx, card, option.outcome === 'approved', userId);
       } else if (card.type === 'correction' && option.outcome === 'approved') {
         // The correction goes through the same Undo window.
         await this.hold.sendCorrection(tx, card, userId);

@@ -41,6 +41,9 @@ export interface BookingInput {
 @Injectable()
 export class BookingsService {
   private busyProvider: BusyProvider | null = null;
+  /** Set by BookingChangesService: offers the freed time to the waitlist. */
+  onCancelled?: (tx: Tx, booking: any) => Promise<unknown>;
+
   constructor(private readonly nudge: NudgeService) {}
 
   setBusyProvider(p: BusyProvider) {
@@ -54,11 +57,11 @@ export class BookingsService {
 
   async context(tx: Tx) {
     const b = await tx.one(
-      `SELECT b.id, b.name, b.slug, b.timezone, b.country, b.currency, b.default_language, p.hours, p.holidays, p.policies, p.address
+      `SELECT b.id, b.name, b.slug, b.timezone, b.country, b.currency, b.default_language, p.hours, p.holidays, p.hours_changes, p.booking_policy, p.policies, p.address
        FROM businesses b JOIN business_profiles p ON p.business_id = b.id WHERE b.id = app_current_business()`,
     );
     if (!b) throw notFound();
-    return b as { id: string; name: string; slug: string; timezone: string; country: string; currency: string; default_language: string; hours: WeeklyHours; holidays: string[]; policies: any; address: string | null };
+    return b as { id: string; name: string; slug: string; timezone: string; country: string; currency: string; default_language: string; hours: WeeklyHours; holidays: string[]; hours_changes: { from: string; hours: WeeklyHours }[]; booking_policy: any; policies: any; address: string | null };
   }
 
   async service(tx: Tx, serviceId: string) {
@@ -107,6 +110,7 @@ export class BookingsService {
       timeZone: ctx.timezone,
       businessHours: ctx.hours,
       holidays: (ctx.holidays ?? []).map((h: any) => (typeof h === 'string' ? h : h.date)),
+      hoursChanges: ctx.hours_changes ?? [],
       staff: availability,
       durationMin: svc.duration_min,
       bufferBeforeMin: svc.buffer_before_min,
@@ -288,6 +292,7 @@ export class BookingsService {
     });
     liveToBusiness(tx, { type: 'booking.changed', data: { id: bk.id } });
     this.busyProvider?.onBookingChanged?.(tx, bk.id, 'cancelled');
+    if (reason !== 'deposit_not_paid') await this.onCancelled?.(tx, bk);
     return bk;
   }
 

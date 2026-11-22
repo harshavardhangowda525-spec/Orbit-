@@ -12,6 +12,7 @@ import { DbService } from '../src/db/db.service';
 import { ChannelsService } from '../src/channels/channels.service';
 import { AiService } from '../src/ai/ai.service';
 import { text } from '../src/ai/fake.provider';
+import { TranscribeService } from '../src/voice/transcribe.service';
 
 const SECRET = 'test-meta-app-secret';
 const VERIFY = 'test-verify-token';
@@ -47,7 +48,10 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
     process.env.META_LOGIN_CONFIG_ID = 'cfg-pages';
     global.fetch = (async (url: string, init?: any) => {
       const u = String(url);
+      // Voice notes: the media file itself (WhatsApp serves it from a separate host, with the token).
+      if (u.startsWith('https://lookaside.fbsbx.com/')) return new Response(new Uint8Array([0x4f, 0x67, 0x67, 0x53, 1, 2, 3, 4]), { status: 200, headers: { 'content-type': 'audio/ogg' } });
       if (!u.startsWith('https://graph.facebook.com/')) return realFetch(url as any, init);
+      if (/\/MEDIA\d+$/.test(u)) return new Response(JSON.stringify({ url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1', mime_type: 'audio/ogg; codecs=opus' }), { status: 200 });
       const body = init?.body ? JSON.parse(init.body) : null;
       if (init?.method === 'POST') sent.push({ url: u, body });
       const ok = (d: object) => new Response(JSON.stringify(d), { status: 200 });
@@ -129,6 +133,55 @@ describe('Meta channels (WhatsApp, Messenger, Instagram)', () => {
     await hook(waMessage('1110001', '919845011111', 'wamid.in1', 'What are your timings?')).expect(200);
     const n = await tenant(a.businessId, (tx) => tx.one(`SELECT count(*)::int AS n FROM messages WHERE channel_message_id = 'wa:wamid.in1'`));
     expect(n.n).toBe(1);
+  });
+
+  describe('voice notes', () => {
+    const voice = (id: string, from: string, media: string) => ({
+      object: 'whatsapp_business_account',
+      entry: [{ id: 'waba', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: '1110001' }, contacts: [{ wa_id: from, profile: { name: 'Lakshmi' } }], messages: [{ from, id, timestamp: String(Math.floor(Date.now() / 1000)), type: 'audio', audio: { id: media, mime_type: 'audio/ogg; codecs=opus', voice: true } }] } }] }],
+    });
+    const stt = () => app.get(TranscribeService).fake!;
+    const lastIn = (from: string) => tenant(a.businessId, (tx) => tx.one(`SELECT m.body, m.meta, m.language FROM messages m JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.external_thread_id = $1 AND m.direction = 'in' ORDER BY m.created_at DESC LIMIT 1`, [from]));
+
+    it('a Hindi voice note is kept as audio and understood as text; Aria answers it like a message', async () => {
+      stt().queue.push({ text: 'कल शाम को हेयरकट का टाइम है क्या?', language: 'hi', confidence: 0.91 });
+      await hook(voice('wamid.v1', '919845077777', 'MEDIA1')).expect(200);
+      const m = await lastIn('919845077777');
+      expect(m.body).toBe('कल शाम को हेयरकट का टाइम है क्या?');
+      expect(m.language).toBe('hi');
+      expect(m.meta.voice).toMatchObject({ heard: true, language: 'hi', confidence: 0.91, fileId: expect.any(String) });
+      const f = await tenant(a.businessId, (tx) => tx.one(`SELECT purpose, mime FROM files WHERE id = $1`, [m.meta.voice.fileId]));
+      expect(f).toEqual({ purpose: 'voice', mime: 'audio/ogg' });
+      // The owner can play it in the inbox.
+      const audio = await a.api.get(`/files/${m.meta.voice.fileId}`).expect(200);
+      expect(audio.headers['content-type']).toBe('audio/ogg');
+      const ai = app.get(AiService).fake!;
+      ai.reset();
+      await jobs.runDue(Date.now(), ['channels.reply']);
+      expect(ai.calls[0].tools.map((t: any) => t.name)).toContain('create_booking');
+    });
+
+    it('not sure what was said: Aria checks with one question and changes nothing', async () => {
+      stt().queue.push({ text: 'cancel my... tomorrow', language: 'en', confidence: 0.31 });
+      await hook(voice('wamid.v2', '919845088888', 'MEDIA2')).expect(200);
+      const ai = app.get(AiService).fake!;
+      ai.reset();
+      ai.script = () => [text('Just to check: do you want to cancel your booking tomorrow?')];
+      await jobs.runDue(Date.now(), ['channels.reply']);
+      const names = ai.calls[0].tools.map((t: any) => t.name);
+      expect(names).not.toContain('cancel_booking');
+      expect(names).not.toContain('create_booking');
+      expect(JSON.stringify(ai.calls[0].messages)).toContain('the transcript may be wrong');
+    });
+
+    it('could not be heard at all: asks the customer to send it again or type it', async () => {
+      stt().queue.push({ text: '' });
+      await hook(voice('wamid.v3', '919845099999', 'MEDIA3')).expect(200);
+      expect((await lastIn('919845099999')).meta.voice).toMatchObject({ heard: false });
+      await jobs.runDue(Date.now(), ['channels.reply']);
+      const out = await tenant(a.businessId, (tx) => tx.one(`SELECT m.body FROM messages m JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.external_thread_id = '919845099999' AND m.direction = 'out' ORDER BY m.created_at DESC LIMIT 1`));
+      expect(out.body).toMatch(/could not hear your voice note/);
+    });
   });
 
   it('rejects webhooks without a valid signature', async () => {

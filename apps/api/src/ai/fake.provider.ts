@@ -64,10 +64,13 @@ function orbitBrain(req: AiRequest): AiBlock[] {
     if (data.customers) return [text(data.customers.length ? `Here are your customers: ${data.customers.map((c: any) => c.name ?? c.phone).join(', ')}.` : 'No customers yet.')];
     if (data.conversations) return [text(data.conversations.length ? `${data.conversations.length} open chat${data.conversations.length === 1 ? '' : 's'}; ${data.conversations.filter((c: any) => c.waiting_for_you).length} waiting for you.` : 'No open chats right now.')];
     if (data.revenue !== undefined) return [text(`${data.bookings ?? 0} bookings and ${data.revenue} so far (${data.period}). ${data.new_customers} new customers.`)];
+    if (data.preview_shown) return [text(`Here is what will change (${data.changes} change${data.changes === 1 ? '' : 's'}${data.bookings_affected ? `, ${data.bookings_affected} booking${data.bookings_affected === 1 ? '' : 's'} affected` : ''}). Check it and press Save.`)];
+    if (data.question) return [text(data.question)];
     if (data.services) return [text(`Your services: ${data.services.map((s: any) => `${s.name} (${s.price})`).join(', ')}.`)];
     return [text('Done.')];
   }
   const q = lastUserText(req).toLowerCase();
+  if (/closed|is now|on leave|discount|open till|open until|from next week|remember|tell customers/.test(q)) return [toolUse('teach_orbit', { text: lastUserText(req) })];
   if (/booking|schedule|appointment|today/.test(q)) return [toolUse('todays_schedule', {})];
   if (/customer|client|people/.test(q)) return [toolUse('open_screen', { screen: 'people' }), toolUse('find_customers', {})];
   if (/chat|inbox|message/.test(q)) return [toolUse('open_screen', { screen: 'inbox' }), toolUse('open_conversations', {})];
@@ -77,6 +80,7 @@ function orbitBrain(req: AiRequest): AiBlock[] {
 }
 
 function demoBrain(req: AiRequest): AiBlock[] {
+  if (req.system.startsWith('KIND: teach')) return [text(JSON.stringify(demoTeach(req.system, lastUserText(req))))];
   if (req.tools.some((t: any) => t.name === 'open_screen')) return orbitBrain(req);
   const last = req.messages[req.messages.length - 1];
   const results = Array.isArray(last?.content) ? (last.content as any[]).filter((b) => b.type === 'tool_result') : [];
@@ -114,4 +118,50 @@ function demoVision(req: VisionRequest): string {
       { name: 'Facial', name_en: null, category: 'Skin', price_text: '1,200', duration_minutes: null, description: null, language: 'en', confidence: 0.62 },
     ],
   });
+}
+
+const DAYS: Record<string, string> = { mon: 'mon', tue: 'tue', wed: 'wed', thu: 'thu', fri: 'fri', sat: 'sat', sun: 'sun' };
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** Offline demo only: understands a few plain English teach sentences so the flow can be tried without a key. */
+export function demoTeach(system: string, said: string) {
+  const today = /TODAY: (\d{4}-\d{2}-\d{2})/.exec(system)?.[1] ?? new Date().toISOString().slice(0, 10);
+  const q = said.toLowerCase();
+  const addDays = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const nextMonday = () => { const wd = (new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7; return addDays(today, 7 - wd); };
+  const dateIn = (s: string) => {
+    const m = /(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/.exec(s);
+    if (!m) return null;
+    const mo = MONTHS.indexOf(m[2]) + 1;
+    let y = Number(today.slice(0, 4));
+    const d = `${y}-${String(mo).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    if (d < today) y++;
+    return `${y}-${String(mo).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  };
+  const changes: any[] = [];
+  const day = /closed on (mon|tue|wed|thu|fri|sat|sun)[a-z]*/.exec(q);
+  if (day) changes.push({ type: 'update_hours', days: [DAYS[day[1]]], ranges: [], from: /next week/.test(q) ? nextMonday() : null });
+  const till = /open (?:till|until) (\d{1,2})(?::(\d{2}))?\s*(pm)? on (mon|tue|wed|thu|fri|sat|sun)/.exec(q);
+  if (till) {
+    let h = Number(till[1]);
+    if (till[3] || h < 12) h += h < 12 ? 12 : 0;
+    changes.push({ type: 'update_hours', days: [DAYS[till[4]]], ranges: [{ from: '10:00', to: `${String(h).padStart(2, '0')}:${till[2] ?? '00'}` }], from: null });
+  }
+  if (!day && /closed on/.test(q) && dateIn(q)) changes.push({ type: 'add_closure', from: dateIn(q), to: null, reason: null });
+  const price = /([a-z][a-z ]+?) (?:is now|now costs?|price is now) (?:₹|rs\.? ?)?([\d,]+)/.exec(q);
+  if (price) changes.push({ type: 'update_service', service: price[1].trim(), price: Number(price[2].replace(/,/g, '')) });
+  const leave = /([a-z]+) is on leave (.+)/.exec(q);
+  if (leave) {
+    const span = /(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s+([a-z]{3})/.exec(leave[2]);
+    const from = span ? dateIn(`${span[1]} ${span[3]}`) : dateIn(leave[2]);
+    const to = span ? dateIn(`${span[2]} ${span[3]}`) : null;
+    if (from) changes.push({ type: 'staff_leave', staff: leave[1], from, to });
+  }
+  const disc = /(?:more than|over|above|max(?:imum)?) (\d{1,2})\s*%/.exec(q);
+  if (disc && /discount|off/.test(q)) changes.push({ type: 'set_rule', maxDiscountPct: Number(disc[1]) });
+  const faq = /tell customers (?:that )?(.+)/.exec(said);
+  if (faq) changes.push({ type: 'add_faq', question: faq[1].split(' ').slice(0, 4).join(' ') + '?', answer: faq[1] });
+  if (changes.length) return { kind: 'teach', question: null, changes };
+  if (/hours|timing|change/.test(q)) return { kind: 'question', question: 'Which day, and what are the new opening and closing times?', changes: [] };
+  return { kind: 'not_teach', question: null, changes: [] };
 }
