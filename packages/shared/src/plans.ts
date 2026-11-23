@@ -51,6 +51,8 @@ export interface PlanFeatures {
   prioritySupport: boolean;
   /** How much of Khata (the books) the plan has; see khataAllows(). */
   khataLevel?: KhataLevel;
+  /** Looks, themes and perks (Phase 6); defaults in experience.ts. */
+  experience?: Partial<import('./experience').PlanExperience>;
 }
 
 export type KhataLevel = 'basic' | 'plus' | 'pro' | 'business';
