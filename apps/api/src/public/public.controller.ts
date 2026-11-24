@@ -1,6 +1,6 @@
 import { Controller, Get, Module, Param } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { isOpenAt, type PlanFeatures } from '@orbit/shared';
+import { experienceOf, isOpenAt, type PlanFeatures } from '@orbit/shared';
 import { DbService } from '../db/db.service';
 import { notFound } from '../common/errors';
 import { Public } from '../auth/guards';
@@ -15,12 +15,13 @@ export class PublicController {
   @Get('businesses/:slug')
   async business(@Param('slug') slug: string) {
     if (!/^[a-z0-9-]{1,64}$/.test(slug)) throw notFound();
-    const b = await this.db.one<{ id: string; name: string; type: string; timezone: string; currency: string; default_language: string; supported_languages: string[]; status: string; features: PlanFeatures }>(
-      `SELECT b.id, b.name, b.type, b.timezone, b.currency, b.default_language, b.supported_languages, b.status, p.features
+    const b = await this.db.one<{ id: string; name: string; type: string; timezone: string; currency: string; default_language: string; supported_languages: string[]; status: string; plan_code: string; features: PlanFeatures }>(
+      `SELECT b.id, b.name, b.type, b.timezone, b.currency, b.default_language, b.supported_languages, b.status, p.code AS plan_code, p.features
        FROM businesses b JOIN plans p ON p.id = b.plan_id WHERE b.slug = $1 AND b.status IN ('live', 'paused', 'onboarding')`,
       [slug],
     );
     if (!b) throw notFound('We could not find this business.');
+    const whiteLabel = !!b.features?.whiteLabel || experienceOf(b.plan_code, b.features?.experience).perks.includes('whiteLabel');
     return this.db.withTenant(b.id, async (tx) => {
       const p = await tx.one(`SELECT address, city, phone, whatsapp, hours, description, photos, social_links, geo_lat, geo_lng FROM business_profiles LIMIT 1`);
       const services = await tx.q(
@@ -43,7 +44,8 @@ export class PublicController {
         services,
         rating: rating?.count ? rating : null,
         reviews,
-        poweredByOrbit: b.features.orbitBranding,
+        poweredByOrbit: b.features.orbitBranding && !whiteLabel,
+        whiteLabel,
       };
     });
   }

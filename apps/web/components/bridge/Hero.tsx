@@ -1,8 +1,10 @@
 'use client';
 
-import type { Sentence } from '@orbit/shared';
+import type { AvatarStyle, Sentence } from '@orbit/shared';
 import { useI18n } from '@/lib/i18n';
 import { useCountUp, useCycle } from '@/lib/motion';
+import type { ExperienceData } from '@/lib/bridge-types';
+import { AgentGlyph } from '@/components/experience/PlanBadge';
 
 export const AGENT_INITIAL: Record<string, string> = { aria: 'A', vox: 'V', nudge: 'N', ledger: 'L', spark: 'S', khata: 'K', orbit: 'O' };
 
@@ -23,33 +25,72 @@ export interface CrewMember {
   working: boolean;
 }
 
-export function AgentDot({ agent, size = '' }: { agent: string; size?: '' | 'sm' | 'lg' }) {
+export function AgentDot({ agent, size = '', avatarStyle = 'initials' }: { agent: string; size?: '' | 'sm' | 'lg'; avatarStyle?: AvatarStyle }) {
   return (
     <span className={`agent-dot ${size} a-${agent}`} aria-hidden>
-      {AGENT_INITIAL[agent] ?? agent[0]?.toUpperCase()}
+      <AgentGlyph agent={agent} style={avatarStyle} />
     </span>
   );
 }
 
 /** The orbit system: agents travelling round the Pulse. Tapping an agent opens it in the Crew view. */
-export function OrbitSystem({ crew, score, animate, onAgent }: { crew: CrewMember[]; score: number; animate: boolean; onAgent: (a: string) => void }) {
+export function OrbitSystem({
+  crew,
+  score,
+  animate,
+  onAgent,
+  experience,
+}: {
+  crew: CrewMember[];
+  score: number;
+  animate: boolean;
+  onAgent: (a: string) => void;
+  experience?: ExperienceData;
+}) {
   const { t } = useI18n();
   const shown = useCountUp(score, animate);
   const R = 46; // progress ring radius in a 110×110 viewBox (7px stroke)
   const C = 2 * Math.PI * R;
   const byKey = Object.fromEntries(crew.map((c) => [c.agent, c]));
+  const planCode = experience?.plan.code ?? 'free';
+  const exp = experience?.plan.experience;
+  const perks = exp?.perks ?? [];
+  const hasTrails = perks.includes('heroTrails');
+  const branches = perks.includes('constellation') ? (experience?.locations ?? []) : [];
+  const avatarStyle = experience?.appearance.effectiveAvatar ?? 'initials';
+  const ringStop1 = experience?.appearance.effectiveBrandColor ?? exp?.accent ?? '#5B4CE0';
+  const ringStop2 = experience?.appearance.effectiveBrandColor ?? exp?.accent2 ?? '#5B4CE0';
+  const gradId = `pulse-ring-${planCode}`;
   return (
-    <div className="orbit" role="group" aria-label={t('hero.orbit_label')}>
+    <div
+      className={`orbit plan-${planCode} ${hasTrails ? 'trails' : ''} ${branches.length ? 'constellation' : ''}`}
+      role="group"
+      aria-label={t('hero.orbit_label')}
+      data-testid="orbit-system"
+      data-trails={hasTrails ? 'true' : 'false'}
+    >
       <div className="ringline r1" />
       <div className="ringline r2" />
       <div className="ringline r3" />
+      {branches.length > 0 && <div className="ringline r4" data-testid="constellation-ring" />}
+      {branches.map((loc, idx) => (
+        <span
+          key={loc.id}
+          className="branch-dot"
+          data-testid="branch-dot"
+          style={{ ['--ang' as any]: `${(idx * 360) / branches.length - 45}deg` }}
+          title={loc.name}
+        >
+          {loc.name}
+        </span>
+      ))}
       {LANES.map((l) => {
         const m = byKey[l.agent];
         return (
           <div key={l.agent} className="lane" style={{ ['--lap' as any]: `${l.lap}s`, ['--delay' as any]: `${l.delay}s`, ['--r' as any]: `${l.r}cqw` }}>
             <div className={`agent a-${l.agent} ${m?.working ? 'working' : ''} ${m && !m.enabled ? 'off' : ''}`}>
               <button type="button" onClick={() => onAgent(l.agent)} aria-label={t('hero.agent_label', { agent: m?.name ?? l.agent, status: `@crew.status.${m?.working ? 'working' : m?.enabled === false ? 'off' : 'idle'}` })}>
-                {AGENT_INITIAL[l.agent]}
+                <AgentGlyph agent={l.agent} style={avatarStyle} />
               </button>
             </div>
           </div>
@@ -57,10 +98,16 @@ export function OrbitSystem({ crew, score, animate, onAgent }: { crew: CrewMembe
       })}
       <div className="pulse-core" aria-label={t('pulse.score_label', { score })}>
         <svg viewBox="0 0 110 110" aria-hidden>
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={ringStop1} />
+              <stop offset="100%" stopColor={ringStop2} />
+            </linearGradient>
+          </defs>
           <circle cx="55" cy="55" r={R} fill="none" stroke="#ECEAF8" strokeWidth="7" />
           <circle
             className="ring-progress"
-            cx="55" cy="55" r={R} fill="none" stroke="#5B4CE0" strokeWidth="7" strokeLinecap="round"
+            cx="55" cy="55" r={R} fill="none" stroke={`url(#${gradId})`} strokeWidth="7" strokeLinecap="round"
             strokeDasharray={C} strokeDashoffset={C * (1 - Math.max(0, Math.min(100, shown)) / 100)}
             style={animate ? undefined : { transition: 'none' }}
           />

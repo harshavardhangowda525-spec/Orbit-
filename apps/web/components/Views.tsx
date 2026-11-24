@@ -12,6 +12,8 @@ import { VoxPanel } from './VoxPanel';
 import { SafetyPanel } from './trust/SafetyPanel';
 import { ServicesCard } from './snap/ServicesCard';
 import { TeachPanel } from './teach/TeachPanel';
+import { AppearancePanel } from './experience/AppearancePanel';
+import { FeatureLockSheet } from './experience/FeatureLockSheet';
 
 function useLoad<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -26,8 +28,10 @@ function useLoad<T>(path: string) {
 }
 
 /** Crew: each agent as a card — status, today's work, and its recent tasks. */
-export function CrewView({ data, selected, onSelect, highlight }: { data: BridgeData; selected: string | null; onSelect: (a: string) => void; highlight?: string | null }) {
+export function CrewView({ data, selected, onSelect, highlight, onUpgrade }: { data: BridgeData; selected: string | null; onSelect: (a: string) => void; highlight?: string | null; onUpgrade?: () => void }) {
   const { t, ts } = useI18n();
+  const [previewAgent, setPreviewAgent] = useState<string | null>(null);
+  const avatarStyle = data.experience?.appearance.effectiveAvatar ?? 'initials';
   // "Change this rule" (from Why?) lands here: scroll to the exact switch and make it glow.
   useEffect(() => {
     if (!highlight) return;
@@ -53,21 +57,32 @@ export function CrewView({ data, selected, onSelect, highlight }: { data: Bridge
       <div className="crew-grid2">
         {crew.map((a) => (
           <button key={a.agent} className={`crew-card2 ${sel === a.agent ? 'sel' : ''}`} data-agent={a.agent} onClick={() => onSelect(a.agent)} style={{ textAlign: 'left', cursor: 'pointer', color: 'var(--ink)' }}>
-            <AgentDot agent={a.agent} size="lg" />
+            <AgentDot agent={a.agent} size="lg" avatarStyle={avatarStyle} />
             <b>{a.name}</b>
             <span className="small muted">{t(`agent.${a.agent}.role`)}</span>
             <span className={`status-pill ${a.working ? 'working' : ''}`}>
               <i />
               {a.enabled ? (a.working ? t('crew.status.working') : t('crew.status.idle')) : t('crew.off')}
             </span>
-            {a.enabled ? <span className="small">{t('crew.done_today', { count: doneToday(a.agent) })}</span> : <span className="small muted">{t('crew.upgrade')}</span>}
+            {a.enabled ? (
+              <span className="small">{t('crew.done_today', { count: doneToday(a.agent) })}</span>
+            ) : (
+              <span className="lock-pill">🔒 {['vox', 'spark'].includes(a.agent) ? 'Pro' : 'Plus'}</span>
+            )}
           </button>
         ))}
       </div>
       <div className="card">
-        <div className="row" style={{ marginBottom: 8 }}>
-          <AgentDot agent={sel} />
-          <b>{data.crew.find((c) => c.agent === sel)?.name}</b>
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <div className="row">
+            <AgentDot agent={sel} avatarStyle={avatarStyle} />
+            <b>{data.crew.find((c) => c.agent === sel)?.name}</b>
+          </div>
+          {!data.crew.find((c) => c.agent === sel)?.enabled && ['vox', 'spark', 'nudge', 'ledger'].includes(sel) && (
+            <button type="button" className="btn small" onClick={() => setPreviewAgent(sel)} data-testid="crew-preview-btn">
+              {t('exp.see_preview')}
+            </button>
+          )}
         </div>
         <ul className="feed2">
           {data.feed.filter((g) => g.agent === sel).slice(0, 8).map((g) => (
@@ -81,6 +96,9 @@ export function CrewView({ data, selected, onSelect, highlight }: { data: Bridge
         <CrewSettings key={sel} agent={sel} />
       </div>
       <SafetyPanel highlight={highlight} />
+      {previewAgent && (
+        <FeatureLockSheet feature={previewAgent} onClose={() => setPreviewAgent(null)} onUpgrade={() => onUpgrade?.()} />
+      )}
     </section>
   );
 }
@@ -218,7 +236,7 @@ export function PowersView() {
 }
 
 /** Details: upcoming bookings, conversations and what Orbit knows (the knowledge editor). */
-export function DetailsView() {
+export function DetailsView({ experience, onReload, onUpgrade }: { experience?: BridgeData['experience']; onReload?: () => void; onUpgrade?: () => void }) {
   const { t, lang } = useI18n();
   const { data: cal } = useLoad<{ bookings: any[] }>('/calendar');
   const { data: convs } = useLoad<any[]>('/inbox');
@@ -226,6 +244,7 @@ export function DetailsView() {
   const upcoming = (cal?.bookings ?? []).filter((b) => new Date(b.endAt) > new Date() && b.status !== 'cancelled').slice(0, 20);
   return (
     <section className="stack">
+      {experience && <AppearancePanel experience={experience} onChanged={() => onReload?.()} onUpgrade={() => onUpgrade?.()} />}
       <TeachPanel />
       <ServicesCard />
       <h2>{t('details.bookings')}</h2>

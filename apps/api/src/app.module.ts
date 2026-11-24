@@ -32,6 +32,7 @@ import { SnapModule } from './snap/snap.controller';
 import { KhataModule } from './khata/khata.controller';
 import { TeachModule } from './teach/teach.controller';
 import { TranscribeModule } from './voice/transcribe.service';
+import { ExperienceModule } from './experience/experience.controller';
 
 @Controller()
 class HealthController {
@@ -55,6 +56,7 @@ class HealthController {
     KhataModule,
     TeachModule,
     TranscribeModule,
+    ExperienceModule,
     BookingsModule,
     KnowledgeModule,
     AiModule,

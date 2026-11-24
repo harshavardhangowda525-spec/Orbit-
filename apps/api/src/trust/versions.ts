@@ -21,9 +21,10 @@ const ENTITIES = {
   },
   service: { table: 'services', key: 'id', cols: ['name', 'price', 'duration_min', 'active', 'deleted_at'] },
   staff: { table: 'staff', key: 'id', cols: ['leave'] },
+  appearance: { table: 'business_profiles', key: 'business_id', cols: ['appearance'] },
 } as const;
 export type VersionedEntity = keyof typeof ENTITIES;
-const JSON_COLS = new Set(['auto_approval_rules', 'hold_seconds', 'review_before_send', 'hours', 'holidays', 'hours_changes', 'guardrails', 'social_links', 'policies', 'leave']);
+const JSON_COLS = new Set(['auto_approval_rules', 'hold_seconds', 'review_before_send', 'hours', 'holidays', 'hours_changes', 'guardrails', 'social_links', 'policies', 'leave', 'appearance']);
 
 /** Current values of the versioned columns (null if the row does not exist). */
 export async function snapshot(tx: Tx, entity: VersionedEntity, id: string) {

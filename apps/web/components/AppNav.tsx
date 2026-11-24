@@ -44,7 +44,7 @@ const PHONE_TABS: NavKey[] = ['today', 'inbox', 'people', 'money'];
  * laptops). Phone and tablet: a bottom tab bar with the four everyday places
  * and "More" for the rest. The Inbox and Today show what is waiting.
  */
-export function AppNav({ active, onSelect, business, badges = {} }: { active: NavKey; onSelect?: (v: View) => void; business?: string; badges?: Partial<Record<NavKey, number>> }) {
+export function AppNav({ active, onSelect, business, badges = {}, whiteLabel = false }: { active: NavKey; onSelect?: (v: View) => void; business?: string; badges?: Partial<Record<NavKey, number>>; whiteLabel?: boolean }) {
   const { t } = useI18n();
   const router = useRouter();
   const [more, setMore] = useState(false);
@@ -68,10 +68,14 @@ export function AppNav({ active, onSelect, business, badges = {} }: { active: Na
     <>
       <aside className="app-side" aria-label={t('nav.label')} data-testid="app-nav">
         <div className="side-brand">
-          <div className="logo" aria-hidden><div className="ring" /><div className="core" /><div className="spin"><i /></div></div>
+          {whiteLabel ? (
+            <span className="agent-dot a-orbit" aria-hidden>{(business ?? 'B')[0]?.toUpperCase()}</span>
+          ) : (
+            <div className="logo" aria-hidden><div className="ring" /><div className="core" /><div className="spin"><i /></div></div>
+          )}
           <div className="side-name">
-            <b>Orbit</b>
-            {business && <span>{business}</span>}
+            <b>{whiteLabel ? (business || 'Workspace') : 'Orbit'}</b>
+            {!whiteLabel && business && <span>{business}</span>}
           </div>
         </div>
         <nav className="side-groups">

@@ -10,6 +10,7 @@ import { groupFeed, type FeedItem } from './feed-group';
 import { HoldService } from '../trust/hold.service';
 import { KhataService } from '../khata/khata.service';
 import { TeachService } from '../teach/teach.service';
+import { ExperienceService } from '../experience/experience.service';
 
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -19,7 +20,7 @@ export const dayPart = (hour: number): DayPart => (hour < 12 ? 'morning' : hour 
 
 @Injectable()
 export class BridgeService {
-  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService, private readonly khata: KhataService, private readonly teach: TeachService) {}
+  constructor(private readonly db: DbService, private readonly conversations: ConversationsService, private readonly usage: UsageService, private readonly hold: HoldService, private readonly khata: KhataService, private readonly teach: TeachService, private readonly experience: ExperienceService) {}
 
   /** Everything The Bridge needs in one round trip (fast on 4G). `force` pins the briefing type (used by the briefing job). */
   async home(businessId: string, now = new Date(), force?: 'morning' | 'evening', userId?: string) {
@@ -144,6 +145,17 @@ export class BridgeService {
               ...(num(s.no_shows_today) > 0 ? [{ key: 'brief.no_shows', params: { count: num(s.no_shows_today) } }] : []),
             ];
 
+      const experience = await this.experience.forBridge(tx, businessId, now, tz, cur, {
+        moneyToday: num(s.money_today),
+        moneyYesterday: num(s.money_yesterday),
+        spentYesterday: num(s.spent_yesterday),
+        bookingsToday: num(s.bookings_today),
+        nextBookingAt: s.next_booking_at ? new Date(s.next_booking_at).toISOString() : null,
+        unpaidInvoices: num(s.unpaid_invoices),
+        unpaidAmount: num(s.unpaid_amount),
+        businessCreatedAt: new Date(biz.created_at).toISOString(),
+      });
+
       return {
         business: { id: biz.id, name: biz.name, slug: biz.slug, timezone: tz, currency: cur, status: biz.status },
         owner: { firstName: (owner?.name ?? '').split(' ')[0] || null },
@@ -161,6 +173,7 @@ export class BridgeService {
         earnings: { total: byAgent.reduce((a, r) => a + r.value, 0), minutesSaved: byAgent.reduce((a, r) => a + r.minutes, 0), byAgent },
         crew: agents.map((a) => ({ agent: a.agent_key, name: a.display_name, enabled: a.enabled, working: working.has(a.agent_key) })),
         suggestions: part === 'morning' ? ['suggest.today_look', 'suggest.who_unpaid_week', 'suggest.call_tomorrow'] : part === 'evening' ? ['suggest.how_today', 'suggest.tomorrow_bookings', 'suggest.who_unpaid_week'] : ['suggest.today_look', 'suggest.fill_slots', 'suggest.who_unpaid_week'],
+        experience,
       };
     });
   }

@@ -34,7 +34,7 @@ const Coupon = z.object({
   validFrom: z.string().datetime().nullable().optional(), validTo: z.string().datetime().nullable().optional(), maxUses: z.number().int().positive().nullable().optional(),
   eligiblePlans: z.array(z.string()).default([]), active: z.boolean().default(true),
 });
-const SETTINGS = ['approval.rules', 'admin.notify', 'costs.units', 'billing.grace_days', 'maintenance', 'fx.usd_inr', 'ai.budget_pct', 'ai.net_revenue_factor', 'addons'] as const;
+const SETTINGS = ['approval.rules', 'admin.notify', 'costs.units', 'billing.grace_days', 'maintenance', 'fx.usd_inr', 'ai.budget_pct', 'ai.net_revenue_factor', 'addons', 'support.success_manager'] as const;
 
 const csv = (rows: Record<string, unknown>[]) => {
   if (!rows.length) return '﻿';

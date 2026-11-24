@@ -865,6 +865,8 @@ locales_phase5.add(k)
 locales_phase5.add_ui(k)
 locales_phase5.add_bookings(k)
 locales_phase5.add_voice(k)
+import locales_phase6
+locales_phase6.add(k)
 
 for i,lang in enumerate(['en','hi','kn']):
   d = {key: v[i] for key,v in sorted(T.items())}

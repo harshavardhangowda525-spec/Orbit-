@@ -42,14 +42,14 @@ export function prefillCommand(text: string) {
  * work still finishes on the server and appears in the Feed.
  * Placeholder hints cycle every 2.6s; hold the mic to speak.
  */
-export function CommandBar({ suggestions, onDone, onOpen, running = true }: { suggestions: string[]; onDone: () => void; onOpen?: (screen: OrbitScreen, id?: string) => void; running?: boolean }) {
+export function CommandBar({ suggestions, onDone, onOpen, running = true, whiteLabel = false }: { suggestions: string[]; onDone: () => void; onOpen?: (screen: OrbitScreen, id?: string) => void; running?: boolean; whiteLabel?: boolean }) {
   const { t, ts, lang } = useI18n();
   const [text, setText] = useState('');
   const { asked, steps, reply, error, busy, teachId } = useChat();
   // Hold to talk: the browser's speech recognition, or a recording Orbit writes down.
   const voice = useVoiceInput(lang, (v) => setText(v));
   const listening = voice.state !== 'idle';
-  const hints = ['cmd.placeholder', ...suggestions.map((s) => `@${s}`)];
+  const hints = [whiteLabel ? 'exp.ask_team' : 'cmd.placeholder', ...suggestions.map((s) => `@${s}`)];
   const i = useCycle(hints.length, 2600, running && !text);
   const hint = hints[i].startsWith('@') ? t('cmd.try', { example: t(hints[i].slice(1)) }) : t(hints[i]);
   useEffect(() => {

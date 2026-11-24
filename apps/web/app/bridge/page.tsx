@@ -2,9 +2,10 @@
 
 import './bridge.css';
 import './bridge-glow.css';
+import '@/components/experience/experience.css';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { Sentence } from '@orbit/shared';
+import { inkOn, type Sentence } from '@orbit/shared';
 import { api, ApiError, session } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
@@ -24,6 +25,9 @@ import { CrewFeed, Earnings, timeAgo, type FeedGroup } from '@/components/bridge
 import { CrewView, PeopleView, PowersView, DetailsView, ComingView } from '@/components/Views';
 import { SpaceBackdrop } from '@/components/SpaceBackdrop';
 import { MaintenanceBanner } from '@/components/MaintenanceBanner';
+import { PlanBadge } from '@/components/experience/PlanBadge';
+import { DowngradeSummary, UpgradeCelebration, WhatsNewCard } from '@/components/experience/UpgradeFlow';
+import { BusinessReportModal, MilestoneModal, MorningStoryCard, MorningStoryModal, SuccessManagerCard, WinsCard } from '@/components/experience/DailyDelight';
 
 import { VIEWS, type BridgeData, type View } from '@/lib/bridge-types';
 
@@ -114,6 +118,26 @@ function Bridge() {
     }
   };
 
+  const [storyOpen, setStoryOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [morningGreet, setMorningGreet] = useState(false);
+  const exp = data?.experience;
+  const whiteLabel = !!exp?.plan.whiteLabel;
+  const effectiveTheme = exp?.appearance.effectiveTheme ?? 'space';
+  const brandColor = exp?.appearance.effectiveBrandColor ?? null;
+
+  // Business+: animated morning greeting on first open each local day.
+  useEffect(() => {
+    if (!data || !exp?.plan.experience.perks.includes('morningGreeting')) return;
+    const key = `orbit.greet.${data.business.id}.${data.now.slice(0, 10)}`;
+    if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
+      localStorage.setItem(key, '1');
+      setMorningGreet(true);
+      const id = setTimeout(() => setMorningGreet(false), 1800);
+      return () => clearTimeout(id);
+    }
+  }, [data, exp]);
+
   const names = Object.fromEntries((data?.crew ?? []).map((c) => [c.agent, c.name]));
   const dayName = data ? new Intl.DateTimeFormat(lang === 'en' ? 'en-IN' : `${lang}-IN`, { weekday: 'long', timeZone: data.business.timezone }).format(new Date(data.now)) : '';
   const greetingKey = data ? `greet.${data.dayPart}` : 'greet.morning';
@@ -122,10 +146,31 @@ function Bridge() {
     window.history.replaceState(null, '', v === 'today' ? '/bridge' : `/bridge?view=${v}`);
   };
 
+  const mainStyle = brandColor
+    ? ({ ['--brand-accent' as any]: brandColor, ['--brand-ink' as any]: inkOn(brandColor) } as React.CSSProperties)
+    : undefined;
+  const showUpgradeCelebration = !!exp?.planChange && !exp.planChange.seenAt && exp.planChange.direction === 'up';
+  const showMilestone = !showUpgradeCelebration && !!exp?.milestones.unseen;
+
   return (
-    <main className={`br has-nav space-theme ${view === 'today' && data ? 'fit' : ''} ${intro ? 'intro' : ''} ${visible ? '' : 'paused'}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <main
+      className={`br has-nav space-theme ${view === 'today' && data ? 'fit' : ''} ${intro ? 'intro' : ''} ${morningGreet ? 'morning-greet' : ''} ${visible ? '' : 'paused'}`}
+      data-theme={effectiveTheme}
+      data-plan={exp?.plan.code ?? 'free'}
+      data-brand={brandColor ? 'true' : undefined}
+      data-whitelabel={whiteLabel ? 'true' : 'false'}
+      style={mainStyle}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       <SpaceBackdrop variant="app" />
-      <AppNav active={view} onSelect={selectView} business={data?.business.name ?? business?.name ?? ''} badges={{ today: data?.needsYou.length ?? 0, inbox: data?.pulse.numbers.peopleWaiting ?? 0 }} />
+      <AppNav
+        active={view}
+        onSelect={selectView}
+        business={data?.business.name ?? business?.name ?? ''}
+        badges={{ today: data?.needsYou.length ?? 0, inbox: data?.pulse.numbers.peopleWaiting ?? 0 }}
+        whiteLabel={whiteLabel}
+      />
       <Header
         dayName={dayName}
         business={data?.business.name ?? business?.name ?? ''}
@@ -133,6 +178,7 @@ function Bridge() {
         isAdmin={!!me?.user.isPlatformAdmin && !me.impersonation}
         signOut={signOut}
         ready={!!data}
+        experience={exp}
       />
       <MaintenanceBanner />
       {me?.impersonation && (
@@ -157,18 +203,31 @@ function Bridge() {
       {!data && !error && <Skeleton />}
 
       {data && view === 'today' && (
-        <Today data={data} intro={intro} running={visible} names={names} dayName={dayName} reload={load} openEntity={openEntity}
-          onAgent={(a) => { setAgent(a); setView('crew'); }} onOpen={(href) => router.push(href)} openScreen={openScreen} />
+        <Today
+          data={data}
+          intro={intro || morningGreet}
+          running={visible}
+          names={names}
+          dayName={dayName}
+          reload={load}
+          openEntity={openEntity}
+          onAgent={(a) => { setAgent(a); setView('crew'); }}
+          onOpen={(href) => router.push(href)}
+          openScreen={openScreen}
+          onSelectView={selectView}
+          onOpenStory={() => setStoryOpen(true)}
+          onOpenReport={() => setReportOpen(true)}
+        />
       )}
-      {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} highlight={params.get('highlight') ?? (params.get('section') === 'safety' ? 'safety' : null)} />}
+      {data && view === 'crew' && <CrewView data={data} selected={agent} onSelect={setAgent} highlight={params.get('highlight') ?? (params.get('section') === 'safety' ? 'safety' : null)} onUpgrade={() => selectView('plan')} />}
       {/* These load business data, so they wait until The Bridge (and the chosen business) is ready. */}
       {data && view === 'people' && <PeopleView />}
       {data && view === 'money' && <MoneyView />}
       {data && view === 'plan' && <PlanView />}
       {data && view === 'powers' && <PowersView />}
-      {data && view === 'details' && <DetailsView />}
+      {data && view === 'details' && <DetailsView experience={exp} onReload={load} onUpgrade={() => selectView('plan')} />}
       {(view === 'tomorrow' || view === 'rewind') && <ComingView view={view} />}
-      {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} /></div>}
+      {data && view !== 'today' && <div className="br-phone-cmd"><CommandBar suggestions={data.suggestions} onDone={load} onOpen={openScreen} running={visible} whiteLabel={whiteLabel} /></div>}
       {data && <UndoBar held={data.held ?? []} onChanged={load} onEditAgain={(text) => prefillCommand(text)} />}
       <WhySheetHost />
       {/* Scan bill: one tap from anywhere on The Bridge (Khata). */}
@@ -183,15 +242,26 @@ function Bridge() {
           <ScanBill onDone={(m) => { setScan(false); load(); if (m) router.push(`/bridge?view=money&month=${m}`); }} currency={data?.business.currency} />
         </div>
       )}
+      {showUpgradeCelebration && exp?.planChange && (
+        <UpgradeCelebration planChange={exp.planChange} experience={exp} ownerName={data?.owner.firstName ?? null} onDone={load} />
+      )}
+      {showMilestone && exp?.milestones.unseen && (
+        <MilestoneModal milestone={exp.milestones.unseen} businessName={data?.business.name ?? ''} whiteLabel={whiteLabel} onDone={load} />
+      )}
+      {storyOpen && exp?.morningStory && data && (
+        <MorningStoryModal story={exp.morningStory} timezone={data.business.timezone} onClose={() => setStoryOpen(false)} />
+      )}
+      {reportOpen && <BusinessReportModal onClose={() => setReportOpen(false)} />}
     </main>
   );
 }
 
-function Header({ dayName, business, greeting, isAdmin, signOut, ready }: { dayName: string; business: string; greeting: string; isAdmin: boolean; signOut: () => void; ready: boolean }) {
+function Header({ dayName, business, greeting, isAdmin, signOut, ready, experience }: { dayName: string; business: string; greeting: string; isAdmin: boolean; signOut: () => void; ready: boolean; experience?: BridgeData['experience'] }) {
   const { t, ts } = useI18n();
   const [notes, setNotes] = useState<{ unread: number; items: { id: string; title: Sentence; link: string | null; at: string; readAt: string | null }[] } | null>(null);
   const [open, setOpen] = useState(false);
   const bellArea = useRef<HTMLDivElement>(null);
+  const whiteLabel = !!experience?.plan.whiteLabel;
   // Close the panel on a tap outside it or on Escape.
   useEffect(() => {
     if (!open) return;
@@ -211,13 +281,20 @@ function Header({ dayName, business, greeting, isAdmin, signOut, ready }: { dayN
   useLive(ready ? ownerLiveQuery() : null, (e) => e.type === 'notification.new' && loadNotes());
   return (
     <header className="br-head rise" style={{ ['--d' as any]: '0s', position: 'relative' }}>
-      <div className="logo" aria-hidden>
-        <div className="ring" />
-        <div className="core" />
-        <div className="spin"><i /></div>
-      </div>
+      {whiteLabel ? (
+        <span className="agent-dot a-orbit" aria-hidden>{(business || 'B')[0]?.toUpperCase()}</span>
+      ) : (
+        <div className="logo" aria-hidden>
+          <div className="ring" />
+          <div className="core" />
+          <div className="spin"><i /></div>
+        </div>
+      )}
       <div className="who">
-        <div className="date">{dayName}{business ? ` · ${business}` : ''}</div>
+        <div className="date" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span>{dayName}{business ? ` · ${business}` : ''}</span>
+          <PlanBadge experience={experience?.plan.experience} whiteLabel={whiteLabel} />
+        </div>
         <h1 data-testid="greeting">{greeting || ' '}</h1>
       </div>
       <div className="bell-area" ref={bellArea}>
@@ -250,13 +327,18 @@ function Header({ dayName, business, greeting, isAdmin, signOut, ready }: { dayN
   );
 }
 
-function Today({ data, intro, running, names, dayName, reload, openEntity, onAgent, onOpen, openScreen }: {
+function Today({ data, intro, running, names, dayName, reload, openEntity, onAgent, onOpen, openScreen, onSelectView, onOpenStory, onOpenReport }: {
   data: BridgeData; intro: boolean; running: boolean; names: Record<string, string>; dayName: string; reload: () => void;
   openEntity: (it: { entityType: string | null; entityId: string | null }) => void; onAgent: (a: string) => void; onOpen: (href: string) => void;
   openScreen: (screen: OrbitScreen, id?: string) => void;
+  onSelectView: (v: View) => void;
+  onOpenStory: () => void;
+  onOpenReport: () => void;
 }) {
   const { t, ts } = useI18n();
   const n = data.pulse.numbers;
+  const exp = data.experience;
+  const whiteLabel = !!exp?.plan.whiteLabel;
   const share = async () => {
     const url = `${window.location.origin}/${data.business.slug}`;
     try {
@@ -271,6 +353,12 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
       <ul>{data.briefing.map((s, i) => <li key={i}>{ts(s)}</li>)}</ul>
     </section>
   );
+  const handleWhatsNew = (action: 'details' | 'crew' | 'story' | 'report' | 'wins') => {
+    if (action === 'details') onSelectView('details');
+    else if (action === 'crew') onSelectView('crew');
+    else if (action === 'story') onOpenStory();
+    else if (action === 'report') onOpenReport();
+  };
   return (
     <div className="br-grid pivot">
       {/* Desktop: one row of the day's key numbers across the top. */}
@@ -279,12 +367,17 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         <KpiExtra earned={data.earnings.total} minutes={data.earnings.minutesSaved} score={data.pulse.score} currency={data.business.currency} byAgent={data.earnings.byAgent} animate={intro} />
       </div>
       <div className="br-col hero-col">
+        {exp?.appearance.activeFestival && (
+          <div className="festival-pill" data-testid="festival-banner">
+            ✨ {t('exp.festival.banner', { festival: t(`exp.festival.${exp.appearance.activeFestival}`) })}
+          </div>
+        )}
         <section className="hero-card rise" style={{ ['--d' as any]: '0.08s' }} data-testid="pulse">
           <div className="hero-top">
             <span className="label">{t('hero.working')}</span>
             <span className="live"><i />{t('hero.live')}</span>
           </div>
-          <OrbitSystem crew={data.crew} score={data.pulse.score} animate={intro} onAgent={onAgent} />
+          <OrbitSystem crew={data.crew} score={data.pulse.score} animate={intro} onAgent={onAgent} experience={exp} />
           <p className="pulse-line" data-testid="pulse-sentence">{ts(data.pulse.sentence)}</p>
           {tiles('hero-tiles')}
           <Ticker
@@ -301,9 +394,31 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         {tiles('tiles phone')}
       </div>
       <div className="br-col mid-col">
+        {exp?.planChange && !exp.planChange.seenAt && exp.planChange.direction === 'down' && (
+          <DowngradeSummary planChange={exp.planChange} onDone={reload} onViewPlans={() => onSelectView('plan')} />
+        )}
+        {exp?.planChange && exp.planChange.direction === 'up' && exp.planChange.seenAt && (
+          <WhatsNewCard planChange={exp.planChange} onAction={handleWhatsNew} onReload={reload} />
+        )}
+        {exp?.morningStory && <MorningStoryCard onOpen={onOpenStory} />}
         {data.mode === 'morning' && briefing}
         {data.mode === 'evening' && briefing}
         <NeedsYou cards={data.needsYou} onDecided={reload} onOpen={onOpen} dayName={dayName} />
+        {exp?.wins && <WinsCard wins={exp.wins} animate={intro} />}
+        {exp?.plan.experience.perks.includes('magazineReport') && (
+          <section className="card exp-card" data-testid="business-report-card">
+            <div className="row between">
+              <div>
+                <b>{t('exp.report.cta')}</b>
+                <div className="small muted">{t('exp.report.sub')}</div>
+              </div>
+              <button type="button" className="btn small" onClick={onOpenReport} data-testid="open-business-report">
+                {t('exp.report.open')}
+              </button>
+            </div>
+          </section>
+        )}
+        {exp?.successManager && <SuccessManagerCard manager={exp.successManager} />}
         <div className="mid-earn" style={{ flexDirection: 'column' }}>
           <KhataMini refresh={data} onOpen={() => openScreen('money')} />
           <Earnings total={data.earnings.total} minutes={data.earnings.minutesSaved} rows={data.earnings.byAgent} currency={data.business.currency} animate={intro} />
@@ -313,7 +428,7 @@ function Today({ data, intro, running, names, dayName, reload, openEntity, onAge
         <CrewFeed groups={data.feed} names={names} animate={intro} onOpen={openEntity} />
       </div>
       {/* Ask Orbit: docked at the bottom of the screen on every size. */}
-      <CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} />
+      <CommandBar suggestions={data.suggestions} onDone={reload} onOpen={openScreen} running={running} whiteLabel={whiteLabel} />
     </div>
   );
 }
